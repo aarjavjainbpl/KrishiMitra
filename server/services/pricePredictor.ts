@@ -272,7 +272,10 @@ export async function predictPrice(
   const ai = getGemini();
   if (ai) {
     try {
-      const response = await ai.models.generateContent({
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('AI generation timeout')), 3500)
+      );
+      const aiPromise = ai.models.generateContent({
         model: 'gemini-flash-latest',
         contents: `You are an agricultural economist advising Indian farmers on KrishiMitra.
 Crop: ${crop}
@@ -282,7 +285,8 @@ Forecast in ${validHorizon} days: ₹${endForecast}/kg (${forecastChangePercent 
 Model Confidence: 98.7%
 Write a concise 2-sentence actionable, encouraging recommendation in simple plain English tailored for the farmer. Focus on whether to sell immediately or hold, storage precautions, and direct buyer listing strategy.`,
       });
-      if (response.text && response.text.trim().length > 20) {
+      const response = (await Promise.race([aiPromise, timeoutPromise])) as any;
+      if (response?.text && response.text.trim().length > 20) {
         recommendation = response.text.trim();
       }
     } catch (e: any) {

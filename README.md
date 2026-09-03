@@ -121,6 +121,25 @@ You can sign in using OTP verification (Default test code: **`1234`**) or use th
 
 ---
 
+## 🚀 Deploying to Vercel (1-Click Ready)
+
+KrishiMitra is fully configured out-of-the-box for seamless Vercel deployment:
+
+1. **Push to GitHub**:
+   - Push this repository to your GitHub account (or export via AI Studio Settings -> Export to GitHub).
+2. **Import into Vercel**:
+   - In [Vercel Dashboard](https://vercel.com), click **Add New... -> Project** and select your KrishiMitra repo.
+   - Vercel will automatically detect `vercel.json` with the Vite framework, `dist` output directory, and the `/api/index.ts` serverless function.
+3. **Set Environment Variables**:
+   - Under **Project Settings -> Environment Variables**, add:
+     - `GEMINI_API_KEY`: Your Gemini API key (from [Google AI Studio](https://aistudio.google.com/app/apikey)).
+     - `JWT_SECRET`: Any secure random string (e.g., `krishimitra-jwt-secret-2026`).
+     - `DATA_GOV_IN_API_KEY`: *(Optional)* If syncing live from data.gov.in.
+4. **Deploy**:
+   - Click **Deploy**. Both the Vite client-side SPA and the `/api` serverless backend will build and deploy instantly with full route rewrites, CORS support, and built-in ICAR agronomist engine fallback.
+
+---
+
 ## 📁 Key Project Architecture
 
 ```text

@@ -2,8 +2,8 @@
   "users": [
     {
       "id": "user-farmer-1",
-      "name": "Rameshwar Patidar",
-      "role": "farmer",
+      "name": "Bhopal Fresh Mart",
+      "role": "buyer",
       "phone": "+91 98260 12345",
       "email": "ramesh.farmer@agriconnect.in",
       "passwordHash": "$2b$10$qquQ/ANzlK7OO5kt.HXt..SLCEWxdEefePokYgzHycqKn9jUTJXzu",
@@ -25244,6 +25244,45 @@
   ],
   "qualityPredictions": [
     {
+      "id": "qp-1788456659382-vkgx6",
+      "imageUrl": "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=800&auto=format&fit=crop&q=80",
+      "cropHint": "Tomato",
+      "predictedGrade": "C",
+      "confidence": 0.94,
+      "diseaseStatus": "diseased",
+      "diseaseName": "Early Blight (Alternaria solani)",
+      "diseaseSeverityPercent": 38,
+      "pathogenType": "Fungal",
+      "symptoms": [
+        "Concentric dark brown \"target-board\" necrotic rings on fruit calyx & shoulder",
+        "Yellow chlorotic halos surrounding irregular lesion perimeters",
+        "Sunken leathery black patches indicative of advanced fungal spore germination",
+        "Accelerated softening and moisture loss around infected dermal zone"
+      ],
+      "treatmentRecommendation": "Immediate field action: Spray Mancozeb 75 WP @ 2.5g/L or Azoxystrobin 23 SC @ 1ml/L. Remove and destroy infected crop debris. For harvested lot: Segregate infected tomatoes for processing/pulping only; do not mix in fresh table shipments.",
+      "defectNotes": [
+        "Pathological Defect: Early Blight fungal lesions on 38% of visible surface",
+        "Not suitable for Grade-A export or long-transit logistics",
+        "Recommended channel: Industrial tomato paste processing or local discount clearance"
+      ],
+      "suggestedPriceAdjustmentPercent": -22,
+      "mandiModalPrice": 28.5,
+      "predictedFairPricePerKg": 22.2,
+      "predictedPricePerQuintal": 2220,
+      "priceRationale": "Grade C (Early Blight (Alternaria solani)): Identified 38% surface pathology/decay. Discounted valuation of ₹22.2/kg (₹2220/Qtl) recommended for fast industrial pulping or immediate discount liquidation.",
+      "recommendedPriceRange": {
+        "min": 20,
+        "max": 24.2
+      },
+      "metrics": {
+        "colorRipenessScore": 68,
+        "surfaceUniformityScore": 54,
+        "blemishFreeScore": 42,
+        "freshnessIndex": 61
+      },
+      "createdAt": "2026-09-03T17:30:59.382Z"
+    },
+    {
       "id": "qp-seed-1",
       "imageUrl": "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=600&auto=format&fit=crop&q=80",
       "cropHint": "Tomato",
@@ -25530,7 +25569,7 @@
       "deliveryLat": 23.2332,
       "deliveryLng": 77.4343,
       "deliveryAddress": "MP Nagar Zone 2 Agro Hub, Bhopal, Madhya Pradesh",
-      "status": "confirmed",
+      "status": "in_transit",
       "createdAt": "2026-09-02T20:43:44.347Z"
     },
     {
@@ -25560,11 +25599,55 @@
       "deliveryLat": 23.2985,
       "deliveryLng": 77.392,
       "deliveryAddress": "Karond APMC Market Yard Shed 4, Bhopal, Madhya Pradesh",
-      "status": "confirmed",
+      "status": "in_transit",
       "createdAt": "2026-09-03T02:43:44.347Z"
     }
   ],
-  "routes": [],
+  "routes": [
+    {
+      "id": "route-1788456722912",
+      "depotLat": 23.25,
+      "depotLng": 77.41,
+      "depotName": "Bhopal Depot",
+      "totalDistanceKm": 18.4,
+      "totalDurationMin": 41,
+      "vehicleCount": 1,
+      "stopsCount": 1,
+      "totalProduceKg": 500,
+      "distanceSavedKm": 0,
+      "carbonSavedKg": 0,
+      "geometry": [
+        [
+          23.25,
+          77.41
+        ],
+        [
+          23.28,
+          77.45
+        ],
+        [
+          23.25,
+          77.41
+        ]
+      ],
+      "stops": [
+        {
+          "id": "stop-route-1788456722912-1",
+          "routeId": "route-1788456722912",
+          "sequenceNumber": 1,
+          "etaMinutes": 27,
+          "distanceFromPreviousKm": 8.8,
+          "stopLat": 23.28,
+          "stopLng": 77.45,
+          "farmerName": "Farmer Stop 1",
+          "cropName": "Produce",
+          "quantityKg": 500,
+          "address": "Farm Gate Waypoint #1"
+        }
+      ],
+      "createdAt": "2026-09-03T17:32:02.912Z"
+    }
+  ],
   "payments": [
     {
       "id": "pay-101",
@@ -25595,6 +25678,46 @@
     }
   ],
   "notifications": [
+    {
+      "id": "notif-1788453521189",
+      "userId": "user-buyer-1",
+      "title": "🚚 Order Dispatched & In Transit",
+      "message": "Consignment for Order #ord-103 (Green Chilli) has been loaded and is in transit to Karond APMC Market Yard Shed 4, Bhopal, Madhya Pradesh.",
+      "type": "order_dispatched",
+      "orderId": "ord-103",
+      "read": false,
+      "createdAt": "2026-09-03T16:38:41.189Z"
+    },
+    {
+      "id": "notif-1788453519360",
+      "userId": "user-buyer-2",
+      "title": "🚚 Order Dispatched & In Transit",
+      "message": "Consignment for Order #ord-102 (Wheat) has been loaded and is in transit to MP Nagar Zone 2 Agro Hub, Bhopal, Madhya Pradesh.",
+      "type": "order_dispatched",
+      "orderId": "ord-102",
+      "read": false,
+      "createdAt": "2026-09-03T16:38:39.360Z"
+    },
+    {
+      "id": "notif-1788447192098",
+      "userId": "user-buyer-1",
+      "title": "📦 Order Ready for Pickup!",
+      "message": "Farmer Rameshwar Patidar has graded, packed, and marked Order #ord-103 (600 kg Green Chilli) ready for pickup at Hoshangabad Road Farm Gate, Bhopal, Madhya Pradesh.",
+      "type": "order_ready",
+      "orderId": "ord-103",
+      "read": false,
+      "createdAt": "2026-09-03T14:53:12.098Z"
+    },
+    {
+      "id": "notif-1788447186859",
+      "userId": "user-buyer-2",
+      "title": "📦 Order Ready for Pickup!",
+      "message": "Farmer Rameshwar Patidar has graded, packed, and marked Order #ord-102 (2,000 kg Wheat) ready for pickup at Phanda Khurd Sharbati Wheat Store, Bhopal, Madhya Pradesh.",
+      "type": "order_ready",
+      "orderId": "ord-102",
+      "read": false,
+      "createdAt": "2026-09-03T14:53:06.875Z"
+    },
     {
       "id": "notif-1",
       "userId": "user-buyer-1",

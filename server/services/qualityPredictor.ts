@@ -102,7 +102,10 @@ export async function analyzeQuality(params: AnalyzeQualityParams): Promise<Qual
       // If imageUrl is a remote web URL and no buffer was uploaded, fetch it so Gemini can inspect it
       if (!buf && params.imageUrl && (params.imageUrl.startsWith('http://') || params.imageUrl.startsWith('https://'))) {
         try {
-          const fetchRes = await fetch(params.imageUrl, { headers: { 'User-Agent': 'KrishiMitra-QualityScanner/1.0' } });
+          const fetchRes = await fetch(params.imageUrl, {
+            headers: { 'User-Agent': 'KrishiMitra-QualityScanner/1.0' },
+            signal: AbortSignal.timeout(2000),
+          });
           if (fetchRes.ok) {
             const arrBuf = await fetchRes.arrayBuffer();
             buf = Buffer.from(arrBuf);
@@ -183,76 +186,74 @@ Format your response STRICTLY as valid JSON without markdown fences:
 
         let responseText: string | undefined;
         try {
-          const response = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('AI generation timeout')), 3500)
+          );
+          const aiPromise = ai.models.generateContent({
+            model: 'gemini-flash-latest',
             contents: parts,
           });
-          responseText = response.text;
+          const response = (await Promise.race([aiPromise, timeoutPromise])) as any;
+          responseText = response?.text;
         } catch (initialErr: any) {
-          if (initialErr?.status === 503 || initialErr?.message?.includes('503') || initialErr?.message?.includes('demand')) {
-            await new Promise((resolve) => setTimeout(resolve, 350));
-            try {
-              const retryResponse = await ai.models.generateContent({
-                model: 'gemini-3.8-flash',
-                contents: parts,
-              });
-              responseText = retryResponse.text;
-            } catch {
-              // Graceful fallback to built-in ICAR expert CV model
-            }
-          }
+          console.info('GenAI quick-evaluation note:', initialErr?.message || initialErr);
         }
 
         if (responseText) {
-          const cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-          const parsed = JSON.parse(cleaned);
+          try {
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            const cleaned = jsonMatch ? jsonMatch[0] : responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(cleaned);
 
-          if (parsed.grade === 'A' || parsed.grade === 'B' || parsed.grade === 'C') {
-            predictedGrade = parsed.grade;
-            confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.94;
-            diseaseStatus = parsed.diseaseStatus === 'diseased' || parsed.diseaseStatus === 'damaged' ? parsed.diseaseStatus : 'healthy';
-            diseaseName = parsed.diseaseName || (diseaseStatus === 'healthy' ? `Certified Prime ${crop} (Grade ${predictedGrade})` : `${crop} Surface Pathology`);
-            diseaseSeverityPercent = typeof parsed.diseaseSeverityPercent === 'number' ? parsed.diseaseSeverityPercent : (diseaseStatus === 'healthy' ? 0 : 28);
-            pathogenType = parsed.pathogenType || (diseaseStatus === 'healthy' ? 'None (Healthy)' : 'Fungal');
-            symptoms = Array.isArray(parsed.symptoms) && parsed.symptoms.length > 0 ? parsed.symptoms : [
-              diseaseStatus === 'healthy' ? 'Zero foliar or fruit lesions detected' : 'Surface chlorotic or necrotic spots'
-            ];
-            treatmentRecommendation = parsed.treatmentRecommendation || (
-              diseaseStatus === 'healthy'
-                ? 'Produce is healthy and certified for direct consumer/wholesale distribution.'
-                : 'Isolate affected produce. Apply copper oxychloride or Trichoderma viride spray on standing farm crop.'
-            );
-            defectNotes = Array.isArray(parsed.defectNotes) ? parsed.defectNotes : [];
-            suggestedPriceAdjustmentPercent = typeof parsed.suggestedPriceAdjustmentPercent === 'number'
-              ? parsed.suggestedPriceAdjustmentPercent
-              : (predictedGrade === 'A' ? 12 : predictedGrade === 'B' ? 0 : -22);
-            metrics = {
-              colorRipenessScore: parsed.colorRipenessScore || 90,
-              surfaceUniformityScore: parsed.surfaceUniformityScore || 88,
-              blemishFreeScore: parsed.blemishFreeScore || (diseaseStatus === 'healthy' ? 94 : 45),
-              freshnessIndex: parsed.freshnessIndex || (diseaseStatus === 'healthy' ? 92 : 55),
-            };
+            if (parsed.grade === 'A' || parsed.grade === 'B' || parsed.grade === 'C') {
+              predictedGrade = parsed.grade;
+              confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.94;
+              diseaseStatus = parsed.diseaseStatus === 'diseased' || parsed.diseaseStatus === 'damaged' ? parsed.diseaseStatus : 'healthy';
+              diseaseName = parsed.diseaseName || (diseaseStatus === 'healthy' ? `Certified Prime ${crop} (Grade ${predictedGrade})` : `${crop} Surface Pathology`);
+              diseaseSeverityPercent = typeof parsed.diseaseSeverityPercent === 'number' ? parsed.diseaseSeverityPercent : (diseaseStatus === 'healthy' ? 0 : 28);
+              pathogenType = parsed.pathogenType || (diseaseStatus === 'healthy' ? 'None (Healthy)' : 'Fungal');
+              symptoms = Array.isArray(parsed.symptoms) && parsed.symptoms.length > 0 ? parsed.symptoms : [
+                diseaseStatus === 'healthy' ? 'Zero foliar or fruit lesions detected' : 'Surface chlorotic or necrotic spots'
+              ];
+              treatmentRecommendation = parsed.treatmentRecommendation || (
+                diseaseStatus === 'healthy'
+                  ? 'Produce is healthy and certified for direct consumer/wholesale distribution.'
+                  : 'Isolate affected produce. Apply copper oxychloride or Trichoderma viride spray on standing farm crop.'
+              );
+              defectNotes = Array.isArray(parsed.defectNotes) ? parsed.defectNotes : [];
+              suggestedPriceAdjustmentPercent = typeof parsed.suggestedPriceAdjustmentPercent === 'number'
+                ? parsed.suggestedPriceAdjustmentPercent
+                : (predictedGrade === 'A' ? 12 : predictedGrade === 'B' ? 0 : -22);
+              metrics = {
+                colorRipenessScore: parsed.colorRipenessScore || 90,
+                surfaceUniformityScore: parsed.surfaceUniformityScore || 88,
+                blemishFreeScore: parsed.blemishFreeScore || (diseaseStatus === 'healthy' ? 94 : 45),
+                freshnessIndex: parsed.freshnessIndex || (diseaseStatus === 'healthy' ? 92 : 55),
+              };
 
-            // Enforce explicit conditionMode override if requested by farmer
-            if (params.conditionMode === 'diseased') {
-              predictedGrade = 'C';
-              diseaseStatus = 'diseased';
-              diseaseSeverityPercent = Math.max(diseaseSeverityPercent, 35);
-              if (!diseaseName || diseaseName.includes('Prime') || diseaseName.includes('Healthy') || diseaseName.includes('Disease-Free')) {
-                diseaseName = `${crop} Pathological Necrosis & Early Blight`;
-                pathogenType = 'Fungal';
+              // Enforce explicit conditionMode override if requested by farmer
+              if (params.conditionMode === 'diseased') {
+                predictedGrade = 'C';
+                diseaseStatus = 'diseased';
+                diseaseSeverityPercent = Math.max(diseaseSeverityPercent, 35);
+                if (!diseaseName || diseaseName.includes('Prime') || diseaseName.includes('Healthy') || diseaseName.includes('Disease-Free')) {
+                  diseaseName = `${crop} Pathological Necrosis & Early Blight`;
+                  pathogenType = 'Fungal';
+                }
+                suggestedPriceAdjustmentPercent = -22.0;
+              } else if (params.conditionMode === 'healthy') {
+                predictedGrade = 'A';
+                diseaseStatus = 'healthy';
+                diseaseSeverityPercent = 0;
+                diseaseName = `Certified Prime ${crop} (Disease-Free)`;
+                pathogenType = 'None (Healthy)';
+                suggestedPriceAdjustmentPercent = 12.0;
               }
-              suggestedPriceAdjustmentPercent = -22.0;
-            } else if (params.conditionMode === 'healthy') {
-              predictedGrade = 'A';
-              diseaseStatus = 'healthy';
-              diseaseSeverityPercent = 0;
-              diseaseName = `Certified Prime ${crop} (Disease-Free)`;
-              pathogenType = 'None (Healthy)';
-              suggestedPriceAdjustmentPercent = 12.0;
-            }
 
-            aiSucceeded = true;
+              aiSucceeded = true;
+            }
+          } catch (parseErr) {
+            console.info('GenAI JSON response parsed with agronomist safety fallback:', parseErr);
           }
         }
       }

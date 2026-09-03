@@ -150,7 +150,7 @@ export function App() {
 
               {/* Auth / Work Selection */}
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
 
               {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />
