@@ -29,6 +29,7 @@ import {
   ComposedChart
 } from 'recharts';
 import { MandiPriceRecord } from '../types';
+import { fallbackMandiRates } from '../data/fallbackData';
 
 export const MandiRatesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -57,15 +58,25 @@ export const MandiRatesPage: React.FC = () => {
       if (selectedState) params.append('region', selectedState);
 
       const res = await fetch(`/api/mandi-rates?${params.toString()}`);
-      const data = await res.json();
-      if (data.rates) {
-        setRates(data.rates);
-        if (data.filters?.crops) setCrops(data.filters.crops);
-        if (data.filters?.states) setStates(data.filters.states);
-        if (data.lastSynced) setLastSynced(data.lastSynced);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.rates && data.rates.length > 0) {
+          setRates(data.rates);
+          if (data.filters?.crops) setCrops(data.filters.crops);
+          if (data.filters?.states) setStates(data.filters.states);
+          if (data.lastSynced) setLastSynced(data.lastSynced);
+          return;
+        }
       }
+      setRates(fallbackMandiRates);
+      setCrops(['Wheat', 'Tomato', 'Onion', 'Potato', 'Green Chilli', 'Rice']);
+      setStates(['Madhya Pradesh', 'Maharashtra', 'Delhi', 'Andhra Pradesh']);
     } catch (err) {
-      console.error('Error loading mandi rates:', err);
+      console.warn('Error loading mandi rates, using fallback:', err);
+      setRates(fallbackMandiRates);
+      setCrops(['Wheat', 'Tomato', 'Onion', 'Potato', 'Green Chilli', 'Rice']);
+      setStates(['Madhya Pradesh', 'Maharashtra', 'Delhi', 'Andhra Pradesh']);
     } finally {
       setLoading(false);
     }

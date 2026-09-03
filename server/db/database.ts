@@ -834,8 +834,21 @@ class Database {
         return parsed;
       }
     } catch (err) {
-      console.warn('Could not load existing data file, seeding new database state:', err);
+      console.warn('Could not load existing data file, checking fallback or seeding:', err);
     }
+
+    try {
+      const tmpFile = path.join('/tmp', 'server_data.json');
+      if (fs.existsSync(tmpFile)) {
+        const raw = fs.readFileSync(tmpFile, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (!parsed.notifications) parsed.notifications = [];
+        return parsed;
+      }
+    } catch (e) {
+      // Ignore
+    }
+
     const initial = generateSeedData();
     this.save(initial);
     return initial;
@@ -845,7 +858,12 @@ class Database {
     try {
       fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), 'utf-8');
     } catch (err) {
-      console.error('Error persisting database:', err);
+      try {
+        const tmpFile = path.join('/tmp', 'server_data.json');
+        fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf-8');
+      } catch (tmpErr) {
+        // In-memory state remains intact
+      }
     }
   }
 

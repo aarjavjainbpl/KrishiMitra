@@ -31,8 +31,8 @@ interface OtpRecord {
 }
 const otpStore: Record<string, OtpRecord> = {};
 
-// Clean up expired OTPs periodically
-setInterval(() => {
+// Clean up expired OTPs periodically (unref so it doesn't block serverless execution)
+const otpCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const phone of Object.keys(otpStore)) {
     if (otpStore[phone].expiresAt < now) {
@@ -40,6 +40,9 @@ setInterval(() => {
     }
   }
 }, 60000);
+if (typeof otpCleanupTimer === 'object' && otpCleanupTimer && 'unref' in otpCleanupTimer) {
+  otpCleanupTimer.unref();
+}
 
 // Middleware to extract auth user from JWT or Phone Token
 function authenticateToken(req: any, res: Response, next: any) {

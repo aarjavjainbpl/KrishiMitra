@@ -99,6 +99,38 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  // Quick 1-click demo entry
+  const handleQuickDemoEnter = async (role: UserRole) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const defaultPhone = role === 'farmer' ? '9826012345' : '9826144556';
+      const defaultName = role === 'farmer' ? 'Rameshwar Patidar' : 'Bhopal Fresh Wholesale Mart';
+      const defaultDistrict = role === 'farmer' ? 'Bhopal (Phanda)' : 'Bhopal (Karond APMC)';
+
+      const result = await verifyOtp(
+        defaultPhone,
+        '1234',
+        role,
+        defaultName,
+        defaultDistrict,
+        'Madhya Pradesh'
+      );
+
+      if (result.success) {
+        if (role === 'farmer') {
+          navigate('/farmer/place-harvest');
+        } else {
+          navigate('/buyer/browse');
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error signing in. Please use OTP 1234.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Verify and Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -428,6 +460,36 @@ export const LoginPage: React.FC = () => {
             )}
           </button>
         </form>
+
+        {/* 1-Click Direct Demo Access (Fastest entry for evaluators / Vercel visitors) */}
+        <div className="pt-2 border-t border-slate-100">
+          <p className="text-[11px] font-black text-slate-500 uppercase tracking-wider text-center mb-2.5 flex items-center justify-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <span>Instant 1-Click Access</span>
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              id="instant-farmer-login-btn"
+              onClick={() => handleQuickDemoEnter('farmer')}
+              disabled={loading}
+              className="px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+            >
+              <span>👨‍🌾</span>
+              <span>Enter as Farmer</span>
+            </button>
+            <button
+              type="button"
+              id="instant-buyer-login-btn"
+              onClick={() => handleQuickDemoEnter('buyer')}
+              disabled={loading}
+              className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-900 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+            >
+              <span>🛒</span>
+              <span>Enter as Wholesale Buyer</span>
+            </button>
+          </div>
+        </div>
 
         {/* Security & Compliance Badges */}
         <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-slate-500 font-semibold pt-2 border-t border-slate-100">

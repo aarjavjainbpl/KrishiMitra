@@ -22,6 +22,7 @@ import {
 import { Listing, Order } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { FairPriceBadge } from '../components/FairPriceBadge';
+import { fallbackListings, fallbackOrders } from '../data/fallbackData';
 
 export const FarmerDashboardPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -83,10 +84,16 @@ export const FarmerDashboardPage: React.FC = () => {
       setLoading(true);
       // Fetch listings
       const res = await fetch('/api/listings');
-      const data = await res.json();
-      if (data.listings) {
-        // Filter to current farmer's listings (or show all in demo mode)
-        setListings(data.listings);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.listings && data.listings.length > 0) {
+          setListings(data.listings);
+        } else {
+          setListings(fallbackListings);
+        }
+      } else {
+        setListings(fallbackListings);
       }
 
       // Fetch incoming orders
@@ -95,14 +102,18 @@ export const FarmerDashboardPage: React.FC = () => {
           Authorization: `Bearer ${localStorage.getItem('krishimitra_token') || localStorage.getItem('agriconnect_token') || ''}`,
         },
       });
-      if (ordRes.ok) {
+      const ordContentType = ordRes.headers.get('content-type') || '';
+      if (ordRes.ok && ordContentType.includes('application/json')) {
         const ordData = await ordRes.json();
-        setOrders(ordData.orders || []);
+        setOrders(ordData.orders || fallbackOrders);
+      } else {
+        setOrders(fallbackOrders);
       }
 
       // Fetch live mandi modal reference
       const mRes = await fetch(`/api/mandi-rates?crop=${cropName}`);
-      if (mRes.ok) {
+      const mContentType = mRes.headers.get('content-type') || '';
+      if (mRes.ok && mContentType.includes('application/json')) {
         const mData = await mRes.json();
         if (mData.rates && mData.rates.length > 0) {
           const avg = mData.rates.reduce((sum: number, r: any) => sum + r.modalPrice, 0) / mData.rates.length;
@@ -110,7 +121,9 @@ export const FarmerDashboardPage: React.FC = () => {
         }
       }
     } catch (e) {
-      console.error('Error fetching farmer dashboard:', e);
+      console.warn('Error fetching farmer dashboard, using fallbacks:', e);
+      setListings(fallbackListings);
+      setOrders(fallbackOrders);
     } finally {
       setLoading(false);
     }

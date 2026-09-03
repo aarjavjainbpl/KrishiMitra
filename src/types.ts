@@ -6,7 +6,7 @@ export interface User {
   role: UserRole;
   phone: string;
   email: string;
-  passwordHash: string;
+  passwordHash?: string;
   locationLat: number;
   locationLng: number;
   state: string;

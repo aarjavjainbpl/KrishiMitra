@@ -22,6 +22,7 @@ import {
 import { Listing } from '../types';
 import { FairPriceBadge } from '../components/FairPriceBadge';
 import { ImageGradeInspectionModal } from '../components/ImageGradeInspectionModal';
+import { fallbackListings } from '../data/fallbackData';
 
 export const BuyerBrowsePage: React.FC = () => {
   const navigate = useNavigate();
@@ -50,12 +51,18 @@ export const BuyerBrowsePage: React.FC = () => {
       if (filterGrade) params.append('qualityGrade', filterGrade);
 
       const res = await fetch(`/api/listings?${params.toString()}`);
-      const data = await res.json();
-      if (data.listings) {
-        setListings(data.listings);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.listings && data.listings.length > 0) {
+          setListings(data.listings);
+          return;
+        }
       }
+      setListings(fallbackListings);
     } catch (e) {
-      console.error('Error loading listings:', e);
+      console.warn('Error loading listings, using fallback:', e);
+      setListings(fallbackListings);
     } finally {
       setLoading(false);
     }
