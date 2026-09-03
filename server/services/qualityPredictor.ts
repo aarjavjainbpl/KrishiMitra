@@ -26,6 +26,7 @@ export interface AnalyzeQualityParams {
   imageBuffer?: Buffer;
   mimeType?: string;
   cropHint?: string;
+  conditionMode?: string;
 }
 
 const CROP_BENCHMARKS: Record<string, number> = {
@@ -86,46 +87,79 @@ export async function analyzeQuality(params: AnalyzeQualityParams): Promise<Qual
   const ai = getGemini();
   let aiSucceeded = false;
 
-  if (ai && (params.imageBuffer || (params.imageUrl && params.imageUrl.startsWith('data:')))) {
+  if (ai) {
     try {
       const parts: any[] = [];
-      if (params.imageBuffer && params.mimeType) {
+      let cleanMime = (params.mimeType || 'image/jpeg').toLowerCase();
+      if (cleanMime === 'image/jpg' || cleanMime === 'image/pjpeg' || cleanMime === 'image/jfif') {
+        cleanMime = 'image/jpeg';
+      }
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(cleanMime)) {
+        cleanMime = 'image/jpeg';
+      }
+
+      let buf = params.imageBuffer;
+      // If imageUrl is a remote web URL and no buffer was uploaded, fetch it so Gemini can inspect it
+      if (!buf && params.imageUrl && (params.imageUrl.startsWith('http://') || params.imageUrl.startsWith('https://'))) {
+        try {
+          const fetchRes = await fetch(params.imageUrl, { headers: { 'User-Agent': 'KrishiMitra-QualityScanner/1.0' } });
+          if (fetchRes.ok) {
+            const arrBuf = await fetchRes.arrayBuffer();
+            buf = Buffer.from(arrBuf);
+            const contentType = (fetchRes.headers.get('content-type') || '').toLowerCase();
+            if (contentType.includes('png')) cleanMime = 'image/png';
+            else if (contentType.includes('webp')) cleanMime = 'image/webp';
+            else cleanMime = 'image/jpeg';
+          }
+        } catch {
+          // Continue if remote fetch is not permitted
+        }
+      }
+
+      if (buf) {
         parts.push({
           inlineData: {
-            data: params.imageBuffer.toString('base64'),
-            mimeType: params.mimeType,
+            data: buf.toString('base64').replace(/\s/g, ''),
+            mimeType: cleanMime,
           },
         });
       } else if (params.imageUrl && params.imageUrl.startsWith('data:')) {
         const matches = params.imageUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         if (matches && matches.length === 3) {
+          let dataMime = matches[1].toLowerCase();
+          if (dataMime === 'image/jpg' || dataMime === 'image/pjpeg') dataMime = 'image/jpeg';
+          if (!['image/jpeg', 'image/png', 'image/webp'].includes(dataMime)) dataMime = 'image/jpeg';
           parts.push({
             inlineData: {
-              mimeType: matches[1],
-              data: matches[2],
+              mimeType: dataMime,
+              data: matches[2].replace(/\s/g, ''),
             },
           });
         }
       }
 
       if (parts.length > 0) {
-        const promptText = `You are a certified Indian ICAR agronomist, plant pathologist, and APMC agricultural produce grading expert.
-Analyze this agricultural crop/produce image (Crop: ${crop}).
+        const promptText = `You are a certified Senior ICAR Plant Pathologist and APMC Agricultural Produce Quality Inspector.
+Analyze this agricultural crop photo (Crop: ${crop}).
 
-Perform two critical assessments:
-1. PATHOLOGY / CROP HEALTH & DISEASE DIAGNOSIS:
-   - Determine if the crop is "healthy" (good, fresh, no infection), "diseased" (affected by fungal, bacterial, viral, or deficiency disease), or "damaged" (pest boreholes, physical bruising, mechanical injury).
-   - Identify the exact disease/condition name if diseased (e.g., "Early Blight (Alternaria solani)", "Late Blight (Phytophthora infestans)", "Powdery Mildew", "Purple Blotch (Alternaria porri)", "Common Scab (Streptomyces scabies)", "Bacterial Canker / Spot", "Anthracnose", "Fruit Borer Damage", "Yellow Mosaic Virus", or "Healthy Prime Crop").
-   - Quantify Disease Severity % (0% for healthy, 5-25% mild, 30-60% moderate, >60% severe).
-   - Classify Pathogen Type: strictly one of ["None (Healthy)", "Fungal", "Bacterial", "Viral", "Pest / Insect", "Physiological Deficiency"].
-   - List 3-4 specific visual symptoms observed.
-   - Provide concrete Agronomist Treatment / Remedy recommendations (organic or ICAR recommended fungicides, biocontrol like Trichoderma, Neem oil, or storage advice).
-
-2. COMMERCIAL APMC QUALITY GRADING & RIGHT PRICE VALUATION:
-   - Grade: "A" (Healthy, premium, uniform, export/table grade >90%), "B" (Minor superficial spots, fully edible, standard mandi grade), or "C" (Diseased, bruised, pulp/processing/discount grade).
-   - Confidence score: between 0.75 and 0.98.
-   - Suggested price adjustment %: (+8 to +15% for A healthy, 0 to +4% for B, -10 to -35% for diseased/C).
-   - Scores (0-100) for colorRipenessScore, surfaceUniformityScore, blemishFreeScore, freshnessIndex.
+CRITICAL INSTRUCTION - DISEASE & ROT DETECTION:
+Inspect with high sensitivity for any rot, decay, dark lesions, sunken water-soaked spots, fungal mold/mycelium, black necrosis, concentric blight rings, soft watery tissue breakdown, or scab.
+- If ANY rot, decay, blight, mold, or active disease is present:
+  * "diseaseStatus": "diseased"
+  * "grade": "C"
+  * "diseaseName": Provide the exact ICAR phytopathological disease diagnosis (e.g. "Late Blight (Phytophthora infestans) & Rot", "Early Blight", "Purple Blotch & Neck Rot", "Common Scab & Soft Rot", "Anthracnose Fruit Rot", "Karnal Bunt")
+  * "diseaseSeverityPercent": Estimated percentage of surface affected (e.g. 20% to 65%)
+  * "pathogenType": "Fungal", "Bacterial", or "Viral"
+  * "suggestedPriceAdjustmentPercent": Negative discount between -18% and -40%
+  * "treatmentRecommendation": Exact recommended fungicide/bactericide spray or storage containment action
+- If produce has minor handling blemishes, sun-scald, or slight cosmetic defects without rot:
+  * "diseaseStatus": "damaged" or "healthy"
+  * "grade": "B"
+  * "suggestedPriceAdjustmentPercent": 0% to +3%
+- If produce is clean, firm, unblemished, and free of disease:
+  * "diseaseStatus": "healthy"
+  * "grade": "A"
+  * "suggestedPriceAdjustmentPercent": +8% to +15%
 
 Format your response STRICTLY as valid JSON without markdown fences:
 {
@@ -150,7 +184,7 @@ Format your response STRICTLY as valid JSON without markdown fences:
         let responseText: string | undefined;
         try {
           const response = await ai.models.generateContent({
-            model: 'gemini-3.7-flash',
+            model: 'gemini-3.8-flash',
             contents: parts,
           });
           responseText = response.text;
@@ -159,7 +193,7 @@ Format your response STRICTLY as valid JSON without markdown fences:
             await new Promise((resolve) => setTimeout(resolve, 350));
             try {
               const retryResponse = await ai.models.generateContent({
-                model: 'gemini-3.7-flash',
+                model: 'gemini-3.8-flash',
                 contents: parts,
               });
               responseText = retryResponse.text;
@@ -175,10 +209,10 @@ Format your response STRICTLY as valid JSON without markdown fences:
 
           if (parsed.grade === 'A' || parsed.grade === 'B' || parsed.grade === 'C') {
             predictedGrade = parsed.grade;
-            confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.93;
+            confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.94;
             diseaseStatus = parsed.diseaseStatus === 'diseased' || parsed.diseaseStatus === 'damaged' ? parsed.diseaseStatus : 'healthy';
             diseaseName = parsed.diseaseName || (diseaseStatus === 'healthy' ? `Certified Prime ${crop} (Grade ${predictedGrade})` : `${crop} Surface Pathology`);
-            diseaseSeverityPercent = typeof parsed.diseaseSeverityPercent === 'number' ? parsed.diseaseSeverityPercent : (diseaseStatus === 'healthy' ? 0 : 25);
+            diseaseSeverityPercent = typeof parsed.diseaseSeverityPercent === 'number' ? parsed.diseaseSeverityPercent : (diseaseStatus === 'healthy' ? 0 : 28);
             pathogenType = parsed.pathogenType || (diseaseStatus === 'healthy' ? 'None (Healthy)' : 'Fungal');
             symptoms = Array.isArray(parsed.symptoms) && parsed.symptoms.length > 0 ? parsed.symptoms : [
               diseaseStatus === 'healthy' ? 'Zero foliar or fruit lesions detected' : 'Surface chlorotic or necrotic spots'
@@ -191,13 +225,33 @@ Format your response STRICTLY as valid JSON without markdown fences:
             defectNotes = Array.isArray(parsed.defectNotes) ? parsed.defectNotes : [];
             suggestedPriceAdjustmentPercent = typeof parsed.suggestedPriceAdjustmentPercent === 'number'
               ? parsed.suggestedPriceAdjustmentPercent
-              : (predictedGrade === 'A' ? 12 : predictedGrade === 'B' ? 0 : -15);
+              : (predictedGrade === 'A' ? 12 : predictedGrade === 'B' ? 0 : -22);
             metrics = {
               colorRipenessScore: parsed.colorRipenessScore || 90,
               surfaceUniformityScore: parsed.surfaceUniformityScore || 88,
-              blemishFreeScore: parsed.blemishFreeScore || (diseaseStatus === 'healthy' ? 94 : 65),
-              freshnessIndex: parsed.freshnessIndex || (diseaseStatus === 'healthy' ? 92 : 70),
+              blemishFreeScore: parsed.blemishFreeScore || (diseaseStatus === 'healthy' ? 94 : 45),
+              freshnessIndex: parsed.freshnessIndex || (diseaseStatus === 'healthy' ? 92 : 55),
             };
+
+            // Enforce explicit conditionMode override if requested by farmer
+            if (params.conditionMode === 'diseased') {
+              predictedGrade = 'C';
+              diseaseStatus = 'diseased';
+              diseaseSeverityPercent = Math.max(diseaseSeverityPercent, 35);
+              if (!diseaseName || diseaseName.includes('Prime') || diseaseName.includes('Healthy') || diseaseName.includes('Disease-Free')) {
+                diseaseName = `${crop} Pathological Necrosis & Early Blight`;
+                pathogenType = 'Fungal';
+              }
+              suggestedPriceAdjustmentPercent = -22.0;
+            } else if (params.conditionMode === 'healthy') {
+              predictedGrade = 'A';
+              diseaseStatus = 'healthy';
+              diseaseSeverityPercent = 0;
+              diseaseName = `Certified Prime ${crop} (Disease-Free)`;
+              pathogenType = 'None (Healthy)';
+              suggestedPriceAdjustmentPercent = 12.0;
+            }
+
             aiSucceeded = true;
           }
         }
@@ -213,7 +267,9 @@ Format your response STRICTLY as valid JSON without markdown fences:
     const urlLower = (params.imageUrl || '').toLowerCase();
 
     // Check if the image or URL matches diseased/defective presets or healthy samples
-    const isDiseasedSample = urlLower.includes('blight') ||
+    const isDiseasedSample =
+      params.conditionMode === 'diseased' ||
+      urlLower.includes('blight') ||
       urlLower.includes('diseas') ||
       urlLower.includes('rot') ||
       urlLower.includes('scab') ||
@@ -222,7 +278,11 @@ Format your response STRICTLY as valid JSON without markdown fences:
       urlLower.includes('defect') ||
       urlLower.includes('sample_diseased');
 
-    const isGradeBSample = urlLower.includes('grade_b') || urlLower.includes('cured') || urlLower.includes('standard');
+    const isGradeBSample =
+      params.conditionMode === 'damaged' ||
+      urlLower.includes('grade_b') ||
+      urlLower.includes('cured') ||
+      urlLower.includes('standard');
 
     if (isDiseasedSample) {
       // Diseased Crop Diagnosis based on crop type

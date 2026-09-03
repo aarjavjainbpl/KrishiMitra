@@ -506,6 +506,7 @@ export const HarvestPlacementPage: React.FC = () => {
         const existing = JSON.parse(localStorage.getItem('krishimitra_local_listings') || '[]');
         existing.unshift(createdListing);
         localStorage.setItem('krishimitra_local_listings', JSON.stringify(existing));
+        window.dispatchEvent(new Event('krishimitra_listings_updated'));
       } catch {
         // Non-blocking
       }

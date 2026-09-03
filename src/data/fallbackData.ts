@@ -347,3 +347,42 @@ export function getFallbackPriceForecast(crop: string, horizonDays: number = 14)
     },
   };
 }
+
+export function getFallbackMandiHistory(crop: string = 'Wheat', days: number = 30) {
+  const basePriceMap: Record<string, number> = {
+    Tomato: 21.0,
+    Onion: 19.0,
+    Potato: 15.5,
+    Wheat: 32.0,
+    Rice: 58.0,
+    'Green Chilli': 38.0,
+    Chilli: 38.0,
+    Banana: 24.0,
+    Soybean: 48.5,
+    Mustard: 54.0,
+    Garlic: 120.0,
+    Gram: 54.0,
+  };
+
+  const basePrice = basePriceMap[crop] || 25.0;
+  const now = Date.now();
+  const history = [];
+
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now - i * 86400000).toISOString().split('T')[0];
+    const wave = Math.sin((i / 5) * Math.PI) * (basePrice * 0.05);
+    const modalPrice = Math.round((basePrice + wave) * 10) / 10;
+    const minPrice = Math.round((modalPrice * 0.88) * 10) / 10;
+    const maxPrice = Math.round((modalPrice * 1.12) * 10) / 10;
+
+    history.push({
+      date: d,
+      modalPrice,
+      minPrice,
+      maxPrice,
+      sampleSize: 8,
+    });
+  }
+
+  return history;
+}

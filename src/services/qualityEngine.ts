@@ -1,4 +1,5 @@
 import { QualityPrediction } from '../types';
+import { PixelAnalysisResult } from '../utils/cropVision';
 
 export const CROP_PRICE_BENCHMARKS: Record<string, number> = {
   tomato: 28.5,
@@ -34,6 +35,8 @@ export interface EvaluateCropParams {
   imageUrl?: string;
   imageFileName?: string;
   isCustomUpload?: boolean;
+  conditionMode?: 'auto' | 'healthy' | 'diseased' | 'damaged';
+  pixelResult?: PixelAnalysisResult;
 }
 
 /**
@@ -47,13 +50,33 @@ export function evaluateCropQuality(params: EvaluateCropParams): QualityPredicti
   const fileName = (params.imageFileName || '').toLowerCase();
   const benchmark = getBenchmarkPrice(crop);
 
-  // Check if image indicates defect or disease
-  const isBlight = url.includes('blight') || fileName.includes('blight');
-  const isPurpleBlotch = url.includes('purple_blotch') || url.includes('rot') || fileName.includes('blotch');
-  const isScab = url.includes('scab') || fileName.includes('scab');
-  const isAnthracnose = url.includes('anthracnose') || fileName.includes('anthracnose');
-  const isDefect = url.includes('defect') || url.includes('diseas') || fileName.includes('diseas') || isBlight || isPurpleBlotch || isScab || isAnthracnose;
-  const isGradeB = url.includes('grade_b') || url.includes('cured') || url.includes('standard') || fileName.includes('grade_b');
+  // Check if image or conditions indicate defect or disease
+  const isKeywordBlight = url.includes('blight') || fileName.includes('blight');
+  const isKeywordRot = url.includes('rot') || fileName.includes('rot');
+  const isKeywordScab = url.includes('scab') || fileName.includes('scab');
+  const isKeywordAnthracnose = url.includes('anthracnose') || fileName.includes('anthracnose');
+  const isKeywordDefect = url.includes('defect') || url.includes('diseas') || fileName.includes('diseas') || isKeywordBlight || isKeywordRot || isKeywordScab || isKeywordAnthracnose;
+  const isKeywordGradeB = url.includes('grade_b') || url.includes('cured') || url.includes('standard') || fileName.includes('grade_b');
+
+  const mode = params.conditionMode || 'auto';
+  const pixelNecrotic = params.pixelResult?.necroticRatio || 0;
+  const pixelBlemish = params.pixelResult?.blemishRatio || 0;
+
+  // Disease determination: manual mode OR detected pixel necrosis OR url/file keywords
+  const isDiseased =
+    mode === 'diseased' ||
+    params.pixelResult?.detectedCondition === 'diseased' ||
+    pixelNecrotic >= 0.07 ||
+    isKeywordDefect;
+
+  // Grade B determination: manual damaged mode OR moderate pixel blemishes OR grade B keywords
+  const isGradeB =
+    !isDiseased &&
+    (mode === 'damaged' ||
+      params.pixelResult?.detectedCondition === 'damaged' ||
+      pixelNecrotic >= 0.025 ||
+      pixelBlemish >= 0.12 ||
+      isKeywordGradeB);
 
   let grade: 'A' | 'B' | 'C' = 'A';
   let diseaseStatus: 'healthy' | 'diseased' | 'damaged' = 'healthy';
@@ -73,88 +96,88 @@ export function evaluateCropQuality(params: EvaluateCropParams): QualityPredicti
   ];
   let priceAdjPercent = 12.0; // +12% premium
   let metrics = {
-    colorRipenessScore: 94,
-    surfaceUniformityScore: 92,
-    blemishFreeScore: 96,
-    freshnessIndex: 95,
+    colorRipenessScore: params.pixelResult?.colorRipenessScore || 94,
+    surfaceUniformityScore: params.pixelResult?.surfaceUniformityScore || 92,
+    blemishFreeScore: params.pixelResult?.blemishFreeScore || 96,
+    freshnessIndex: params.pixelResult?.freshnessIndex || 95,
   };
 
-  if (isDefect) {
+  if (isDiseased) {
     diseaseStatus = 'diseased';
     grade = 'C';
-    confidence = 0.94;
-    priceAdjPercent = -22.0; // -22% discount
+    confidence = 0.95;
+    priceAdjPercent = -25.0; // -25% discount for disease/rot
+
+    // Calculate severity dynamically from computer vision pixel analysis
+    const calculatedSeverity = Math.min(65, Math.max(22, Math.round(pixelNecrotic * 100 * 1.5 || 35)));
+    diseaseSeverityPercent = calculatedSeverity;
 
     if (cropLower.includes('tomato')) {
-      diseaseName = 'Early Blight (Alternaria solani)';
+      diseaseName = 'Late Blight (Phytophthora infestans) & Rot';
       pathogenType = 'Fungal';
-      diseaseSeverityPercent = 38;
       symptoms = [
-        'Concentric "target-board" necrotic brown spots around calyx shoulder',
-        'Yellow chlorotic halo border surrounding necrotic lesions',
-        'Sunken, leathery dark epidermal patches with fungal mycelial spores',
-        'Accelerated moisture loss and localized tissue softening',
+        'Dark water-soaked brown necrotic lesions spreading rapidly across pericarp',
+        'Sunken decayed leathery tissue with grey-white fungal sporulation',
+        'Foul odor and loss of epidermal structural firmness (soft rot decay)',
+        'Premature internal tissue collapse and liquefaction',
       ];
-      treatmentRecommendation = 'Apply Mancozeb 75 WP @ 2.5g/L or Azoxystrobin 23 SC @ 1ml/L immediately to farm plots. Harvested batch must be segregated for industrial pulping or local clearance; discard heavily rotted units.';
+      treatmentRecommendation = 'Apply Metalaxyl 8% + Mancozeb 64% WP (Ridomil MZ) @ 2.5g/L or Cymoxanil + Mancozeb @ 2g/L on standing crop. Segregate and incinerate heavily rotted fruits; do not transport with healthy produce.';
       defectNotes = [
-        'Severe Alternaria solani fungal lesion penetration on >30% surface',
-        'Not viable for long-haul interstate cold transit or fresh export',
-        'Recommended destination: Industrial tomato paste processing or discounted local clearance',
+        `Phytophthora infestans fungal rot detected across ~${calculatedSeverity}% of fruit surface`,
+        'High bacterial secondary soft rot risk in transit',
+        'Lot rejected for fresh supermarket retail; restricted to industrial salvage or disposal',
       ];
       metrics = {
-        colorRipenessScore: 68,
-        surfaceUniformityScore: 56,
-        blemishFreeScore: 42,
-        freshnessIndex: 60,
+        colorRipenessScore: Math.min(metrics.colorRipenessScore, 65),
+        surfaceUniformityScore: Math.min(metrics.surfaceUniformityScore, 52),
+        blemishFreeScore: Math.max(30, Math.round(100 - calculatedSeverity * 1.6)),
+        freshnessIndex: Math.max(38, Math.round(100 - calculatedSeverity * 1.4)),
       };
     } else if (cropLower.includes('onion')) {
       diseaseName = 'Purple Blotch & Neck Rot (Alternaria porri)';
       pathogenType = 'Fungal';
-      diseaseSeverityPercent = 32;
       symptoms = [
-        'Sunken water-soaked lesions turning dark purple at outer tunic leaf',
-        'Softening neck tissue prone to bacterial secondary rot',
-        'Loss of dry papery protective skin integrity',
+        'Sunken water-soaked lesions turning dark purple with yellow chlorotic rings',
+        'Fungal mycelial growth at neck tissue with foul-smelling soft rot',
+        'Loss of protective papery tunic scales and premature bulb softening',
       ];
-      treatmentRecommendation = 'Field recommendation: Spray Chlorothalonil 75 WP @ 2g/L or Tebuconazole 25 EC. Thoroughly sun-cure bulbs on raised slatted racks for 10-14 days; do not store damp bulbs.';
+      treatmentRecommendation = 'Spray Chlorothalonil 75 WP @ 2g/L or Tebuconazole 25 EC. Sort out all soft-neck bulbs immediately and dry on open slatted racks under shade for 10-14 days.';
       defectNotes = [
-        'Fungal neck infection poses high risk of transit collapse in sealed bags',
-        'Sort out affected bulbs immediately before bulk transport',
+        'Fungal neck and tunic infection will cause total storage rot breakdown',
+        'Must be segregated before packing in 50kg jute sacks',
       ];
       metrics = {
-        colorRipenessScore: 65,
-        surfaceUniformityScore: 58,
-        blemishFreeScore: 45,
-        freshnessIndex: 62,
+        colorRipenessScore: Math.min(metrics.colorRipenessScore, 62),
+        surfaceUniformityScore: Math.min(metrics.surfaceUniformityScore, 54),
+        blemishFreeScore: Math.max(35, Math.round(100 - calculatedSeverity * 1.5)),
+        freshnessIndex: Math.max(42, Math.round(100 - calculatedSeverity * 1.3)),
       };
     } else if (cropLower.includes('potato')) {
-      diseaseName = 'Common Scab (Streptomyces scabies)';
+      diseaseName = 'Common Scab & Soft Rot (Streptomyces / Pectobacterium)';
       pathogenType = 'Bacterial';
-      diseaseSeverityPercent = 28;
       symptoms = [
-        'Corky, raised brown-black scab lesions on tuber skin',
-        'Pitted crater-like necrotic spots penetrating 2-3mm sub-surface',
-        'Skin russeting and irregular epidermal texture',
+        'Corky, dark brown to black raised scab lesions and pitted craters on tuber skin',
+        'Water-soaked slimy tissue softening beneath epidermal layer',
+        'Microbial rot causing liquefaction and foul bacterial exudate',
       ];
-      treatmentRecommendation = 'Treat seed tubers with Trichoderma viride or 3% boric acid prior to planting. Maintain soil pH <5.5 with sulfur applications. Lot is edible after peeling, recommend discount sale to chip/snack frying units.';
+      treatmentRecommendation = 'Treat seed tubers with 3% Boric acid or Trichoderma viride. Maintain soil pH below 5.5. Disinfect sorting bins with sodium hypochlorite; discard rotted tubers.';
       defectNotes = [
-        'Superficial corky scab defects lower table appeal',
-        'Suitable for industrial starch or processed potato food manufacturing',
+        'Severe bacterial scab and rot degrades tuber table value completely',
+        'Discount lot suitable only for immediate starch extraction or peeling processing',
       ];
       metrics = {
-        colorRipenessScore: 72,
-        surfaceUniformityScore: 52,
-        blemishFreeScore: 48,
-        freshnessIndex: 68,
+        colorRipenessScore: Math.min(metrics.colorRipenessScore, 68),
+        surfaceUniformityScore: Math.min(metrics.surfaceUniformityScore, 48),
+        blemishFreeScore: Math.max(32, Math.round(100 - calculatedSeverity * 1.6)),
+        freshnessIndex: Math.max(45, Math.round(100 - calculatedSeverity * 1.4)),
       };
     } else if (cropLower.includes('chilli')) {
       diseaseName = 'Anthracnose & Fruit Rot (Colletotrichum capsici)';
       pathogenType = 'Fungal';
-      diseaseSeverityPercent = 34;
       symptoms = [
         'Circular sunken necrotic lesions with concentric rings of black acervuli',
-        'Premature fruit softening and straw-colored bleached tip patches',
-        'Shrinkage of green pepper pod wall',
+        'Water-soaked bleached patches on green pods with premature shriveling',
+        'Rapid post-harvest transit rotting and pod collapse',
       ];
       treatmentRecommendation = 'Spray Propiconazole 25 EC @ 1ml/L or Copper Oxychloride 50 WP @ 2.5g/L. Collect and destroy dropped infected pods.',
       defectNotes = [
@@ -162,51 +185,70 @@ export function evaluateCropQuality(params: EvaluateCropParams): QualityPredicti
         'Segregate infected pods; do not mix in export shipments',
       ];
       metrics = {
-        colorRipenessScore: 66,
-        surfaceUniformityScore: 54,
-        blemishFreeScore: 44,
-        freshnessIndex: 62,
+        colorRipenessScore: Math.min(metrics.colorRipenessScore, 64),
+        surfaceUniformityScore: Math.min(metrics.surfaceUniformityScore, 52),
+        blemishFreeScore: Math.max(30, Math.round(100 - calculatedSeverity * 1.7)),
+        freshnessIndex: Math.max(40, Math.round(100 - calculatedSeverity * 1.5)),
       };
-    } else {
-      diseaseName = `${crop} Pathological Surface Blight & Bruising`;
+    } else if (cropLower.includes('wheat')) {
+      diseaseName = 'Karnal Bunt & Black Point (Tilletia indica / Bipolaris)';
       pathogenType = 'Fungal';
-      diseaseSeverityPercent = 25;
       symptoms = [
-        'Visible discoloration and localized tissue breakdown',
-        'Superficial blemish patches and mechanical bruise softening',
+        'Blackened embryo tip (black point) and powdery fishy-smelling spores',
+        'Loss of grain vitreous luster and damaged endosperm starch',
       ];
-      treatmentRecommendation = 'Isolate infected lot. Ensure clean dry storage and rapid local market liquidation.',
+      treatmentRecommendation = 'Seed treatment with Carboxin + Thiram @ 2g/kg. Prohibited from seed multiplication and international export; flour milling requires heavy dilution with sound grain.';
       defectNotes = [
-        'Grade C discount applies due to visible cosmetic and cellular degradation',
+        'Spores affect gluten baking quality and impart greyish hue',
+        'Discounted to Grade C processing / poultry feed grade',
       ];
       metrics = {
-        colorRipenessScore: 70,
-        surfaceUniformityScore: 60,
-        blemishFreeScore: 50,
-        freshnessIndex: 65,
+        colorRipenessScore: Math.min(metrics.colorRipenessScore, 66),
+        surfaceUniformityScore: Math.min(metrics.surfaceUniformityScore, 58),
+        blemishFreeScore: Math.max(35, Math.round(100 - calculatedSeverity * 1.5)),
+        freshnessIndex: Math.max(45, Math.round(100 - calculatedSeverity * 1.3)),
+      };
+    } else {
+      diseaseName = `${crop} Pathological Surface Rot & Blight`;
+      pathogenType = 'Fungal';
+      symptoms = [
+        'Localized necrotic rot, tissue softening, and water-soaked discoloration',
+        'Fungal sporulation or bacterial breakdown on epidermal layers',
+      ];
+      treatmentRecommendation = 'Isolate infected lot immediately. Ensure clean, ventilated storage and rapid discounted liquidation.';
+      defectNotes = [
+        `Grade C discount applied due to ~${calculatedSeverity}% diseased rot coverage`,
+      ];
+      metrics = {
+        colorRipenessScore: Math.min(metrics.colorRipenessScore, 68),
+        surfaceUniformityScore: Math.min(metrics.surfaceUniformityScore, 56),
+        blemishFreeScore: Math.max(35, Math.round(100 - calculatedSeverity * 1.5)),
+        freshnessIndex: Math.max(45, Math.round(100 - calculatedSeverity * 1.3)),
       };
     }
   } else if (isGradeB) {
     grade = 'B';
-    diseaseStatus = 'healthy';
+    diseaseStatus = 'damaged';
     diseaseName = `Standard Commercial ${crop} (Market Grade B)`;
     confidence = 0.91;
-    priceAdjPercent = 2.0; // +2% standard parity
+    priceAdjPercent = 0.0; // Mandi benchmark parity
+    diseaseSeverityPercent = 8;
+    pathogenType = 'None (Healthy)';
     symptoms = [
-      'Normal field coloration with slight size variation',
-      'Intact skin with minor superficial sun-scald or handling marks (<5% surface)',
-      'Firm structure, fully sound for direct consumption',
+      'Normal field coloration with moderate size variation',
+      'Superficial handling blemishes or minor russeting (<8% surface)',
+      'Firm cellular structure, fully safe and sound for consumption',
     ];
-    treatmentRecommendation = 'Produce meets all health standards for local APMC trade. Ready for immediate consumer packaging and commercial kitchen supply.';
+    treatmentRecommendation = 'Produce meets all food safety standards for APMC trade. Ready for commercial kitchens, catering, and standard retail packaging.';
     defectNotes = [
-      'Minor cosmetic irregularities only; zero internal disease or rotting',
+      'Minor cosmetic blemishes only; zero active bacterial or fungal rot',
       'Meets standard AGMARK Grade II requirements',
     ];
     metrics = {
-      colorRipenessScore: 86,
-      surfaceUniformityScore: 82,
-      blemishFreeScore: 84,
-      freshnessIndex: 85,
+      colorRipenessScore: Math.min(metrics.colorRipenessScore, 86),
+      surfaceUniformityScore: Math.min(metrics.surfaceUniformityScore, 82),
+      blemishFreeScore: Math.min(metrics.blemishFreeScore, 84),
+      freshnessIndex: Math.min(metrics.freshnessIndex, 86),
     };
   } else {
     // Healthy Grade A
@@ -288,3 +330,4 @@ export function evaluateCropQuality(params: EvaluateCropParams): QualityPredicti
     createdAt: new Date().toISOString(),
   };
 }
+
