@@ -1,0 +1,6 @@
+{
+  "name": "KrishiMitra",
+  "description": "Smart farmer-to-buyer marketplace with live Agmarknet mandi rates, AI price forecasting, produce quality grading, and route optimization.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
