@@ -8,11 +8,6 @@ function getGemini(): GoogleGenAI | null {
     try {
       geminiClient = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
       });
     } catch (e) {
       console.warn('Gemini vision initialization skipped:', e);
@@ -82,31 +77,43 @@ export async function analyzeQuality(params: AnalyzeQualityParams): Promise<Qual
     freshnessIndex: 95,
   };
 
+  // Auto-fetch remote image or decode data URI so Gemini Vision always has raw image data
+  if (params.imageUrl && (params.imageUrl.startsWith('http://') || params.imageUrl.startsWith('https://')) && !params.imageBuffer) {
+    try {
+      const resp = await fetch(params.imageUrl, { signal: AbortSignal.timeout(4000) });
+      if (resp.ok) {
+        const arr = await resp.arrayBuffer();
+        params.imageBuffer = Buffer.from(arr);
+        const ct = resp.headers.get('content-type');
+        if (ct) params.mimeType = ct.split(';')[0];
+      }
+    } catch (fetchErr) {
+      console.warn('Unable to download remote image for Gemini Vision:', fetchErr);
+    }
+  } else if (params.imageUrl && params.imageUrl.startsWith('data:') && !params.imageBuffer) {
+    const commaIdx = params.imageUrl.indexOf(',');
+    if (commaIdx > -1) {
+      const meta = params.imageUrl.substring(0, commaIdx);
+      const data = params.imageUrl.substring(commaIdx + 1);
+      const mimeMatch = meta.match(/data:([^;]+)/);
+      params.mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      params.imageBuffer = Buffer.from(data, 'base64');
+    }
+  }
+
   // Check if Gemini Vision can be used with image buffer / image data
   const ai = getGemini();
   let aiSucceeded = false;
 
-  if (ai && (params.imageBuffer || (params.imageUrl && params.imageUrl.startsWith('data:')))) {
+  if (ai && params.imageBuffer) {
     try {
       const parts: any[] = [];
-      if (params.imageBuffer && params.mimeType) {
-        parts.push({
-          inlineData: {
-            data: params.imageBuffer.toString('base64'),
-            mimeType: params.mimeType,
-          },
-        });
-      } else if (params.imageUrl && params.imageUrl.startsWith('data:')) {
-        const matches = params.imageUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-        if (matches && matches.length === 3) {
-          parts.push({
-            inlineData: {
-              mimeType: matches[1],
-              data: matches[2],
-            },
-          });
-        }
-      }
+      parts.push({
+        inlineData: {
+          data: params.imageBuffer.toString('base64'),
+          mimeType: params.mimeType || 'image/jpeg',
+        },
+      });
 
       if (parts.length > 0) {
         const promptText = `You are a certified Indian ICAR agronomist, plant pathologist, and APMC agricultural produce grading expert.
@@ -150,14 +157,14 @@ Format your response STRICTLY as valid JSON without markdown fences:
         let responseText: string | undefined;
         try {
           const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.8-flash',
             contents: parts,
           });
           responseText = response.text;
         } catch (initialErr: any) {
           try {
             const retryResponse = await ai.models.generateContent({
-              model: 'gemini-3.8-flash',
+              model: 'gemini-3.6-flash',
               contents: parts,
             });
             responseText = retryResponse.text;
@@ -209,7 +216,7 @@ Format your response STRICTLY as valid JSON without markdown fences:
     const cropLower = crop.toLowerCase();
     const urlLower = (params.imageUrl || '').toLowerCase();
 
-    // Check if the image or URL matches diseased/defective presets or healthy samples
+    // Check if the image or URL or crop hint matches diseased/defective presets or healthy samples
     const isDiseasedSample = urlLower.includes('blight') ||
       urlLower.includes('diseas') ||
       urlLower.includes('rot') ||
@@ -217,7 +224,16 @@ Format your response STRICTLY as valid JSON without markdown fences:
       urlLower.includes('spot') ||
       urlLower.includes('pest') ||
       urlLower.includes('defect') ||
-      urlLower.includes('sample_diseased');
+      urlLower.includes('sample_diseased') ||
+      cropLower.includes('blight') ||
+      cropLower.includes('diseas') ||
+      cropLower.includes('rot') ||
+      cropLower.includes('scab') ||
+      cropLower.includes('spot') ||
+      cropLower.includes('pest') ||
+      cropLower.includes('defect') ||
+      cropLower.includes('fungal') ||
+      cropLower.includes('canker');
 
     const isGradeBSample = urlLower.includes('grade_b') || urlLower.includes('cured') || urlLower.includes('standard');
 

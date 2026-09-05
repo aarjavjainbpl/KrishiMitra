@@ -33,7 +33,6 @@ import { useAuth } from '../context/AuthContext';
 import { Listing, Order, QualityPrediction } from '../types';
 import { FairPriceBadge } from '../components/FairPriceBadge';
 import { compressImageFile } from '../utils/imageCompressor';
-import { createClientFallbackQualityPrediction } from '../utils/qualityFallback';
 
 interface CropPreset {
   id: string;
@@ -388,15 +387,8 @@ export const HarvestPlacementPage: React.FC = () => {
         speakText(`AI Quality Inspection completed. Produce certified as Grade ${pred.predictedGrade}. Crop health is ${pred.diseaseStatus}.`);
       }
     } catch (err: any) {
-      console.warn('Backend quality inspection failed, using certified diagnostic engine fallback:', err);
-      const fallbackPred = createClientFallbackQualityPrediction(inspectionImage || '', selectedCrop.name);
-      setQualityInspection(fallbackPred);
-      setQualityPredictionId(fallbackPred.id);
-      setQualityGrade(fallbackPred.predictedGrade);
-      if (fallbackPred.predictedFairPricePerKg) {
-        setAskingPricePerKg(fallbackPred.predictedFairPricePerKg);
-      }
-      setInspectionError(null);
+      console.error('Quality inspection failed:', err);
+      setInspectionError(err.message || 'Error running quality inspection');
     } finally {
       setAnalyzingQuality(false);
     }

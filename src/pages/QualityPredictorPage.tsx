@@ -30,7 +30,6 @@ import {
 } from 'lucide-react';
 import { QualityPrediction } from '../types';
 import { compressImageFile } from '../utils/imageCompressor';
-import { createClientFallbackQualityPrediction } from '../utils/qualityFallback';
 
 export const QualityPredictorPage: React.FC = () => {
   const navigate = useNavigate();
@@ -275,21 +274,19 @@ export const QualityPredictorPage: React.FC = () => {
       }
 
       if (!res.ok) {
-        throw new Error(`Server returned status ${res.status}`);
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Server returned status ${res.status}`);
       }
       const data = await res.json();
       if (data.prediction) {
         setPrediction(data.prediction);
         fetchHistory();
       } else {
-        throw new Error('Invalid analysis response');
+        throw new Error('Invalid analysis response from server');
       }
     } catch (err: any) {
-      console.warn('Quality analysis server call failed, applying client heuristic diagnostic engine:', err);
-      // Seamlessly generate client-side certified evaluation so user is never blocked
-      const fallbackPrediction = createClientFallbackQualityPrediction(targetImgUrl, targetCrop);
-      setPrediction(fallbackPrediction);
-      setError(null);
+      console.error('Quality analysis failed:', err);
+      setError(err.message || 'Error analyzing produce quality and crop health');
     } finally {
       setAnalyzing(false);
     }

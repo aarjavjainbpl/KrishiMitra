@@ -142,7 +142,7 @@ export async function predictPrice(
   if (ai) {
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: `You are an expert agricultural economist advising Indian farmers on KrishiMitra.
 Crop: ${crop}
 Region: ${region || 'All India APMC average'}
@@ -157,7 +157,7 @@ Write a concise 2-sentence actionable, encouraging recommendation in simple plai
     } catch (e: any) {
       try {
         const retryResp = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: 'gemini-3.6-flash',
           contents: `Advise farmer on ${crop} price change (${forecastChangePercent}% in ${validHorizon} days). Recommend action concisely.`,
         });
         if (retryResp.text && retryResp.text.trim().length > 20) {

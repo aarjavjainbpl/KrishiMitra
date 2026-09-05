@@ -470,6 +470,15 @@ router.post('/quality-predictor/analyze', upload.single('image'), async (req: an
       // Convert buffer to data URI for frontend storage/preview
       const base64 = req.file.buffer.toString('base64');
       imageUrl = `data:${req.file.mimetype};base64,${base64}`;
+    } else if (imageUrl && imageUrl.startsWith('data:')) {
+      const commaIdx = imageUrl.indexOf(',');
+      if (commaIdx > -1) {
+        const meta = imageUrl.substring(0, commaIdx);
+        const b64Data = imageUrl.substring(commaIdx + 1);
+        const mimeMatch = meta.match(/data:([^;]+)/);
+        mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+        imageBuffer = Buffer.from(b64Data, 'base64');
+      }
     }
 
     if (!imageUrl && !imageBuffer) {
