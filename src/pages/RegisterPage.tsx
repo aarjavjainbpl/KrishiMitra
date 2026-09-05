@@ -52,7 +52,7 @@ export const RegisterPage: React.FC = () => {
             <Sprout className="w-6 h-6" />
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 font-display">
-            Create a KrishiMitra Account
+            Create an AgriConnect Account
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Connect directly to fair trade farm markets

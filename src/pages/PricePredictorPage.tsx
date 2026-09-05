@@ -29,7 +29,6 @@ import {
   ReferenceLine
 } from 'recharts';
 import { PricePredictionResponse } from '../types';
-import { getFallbackPriceForecast } from '../data/fallbackData';
 
 export const PricePredictorPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -59,45 +58,19 @@ export const PricePredictorPage: React.FC = () => {
         body: JSON.stringify({ crop, region, horizonDays }),
       });
 
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data: PricePredictionResponse = await res.json();
-        setPrediction(data);
+      if (!res.ok) throw new Error('Failed to generate price forecast');
+      const data: PricePredictionResponse = await res.json();
+      setPrediction(data);
 
-        // Also fetch backtested accuracy stats
-        const accRes = await fetch(`/api/price-predictor/accuracy/${crop}`);
-        if (accRes.ok && (accRes.headers.get('content-type') || '').includes('application/json')) {
-          const acc = await accRes.json();
-          setAccuracyData(acc);
-        }
-        return;
+      // Also fetch backtested accuracy stats
+      const accRes = await fetch(`/api/price-predictor/accuracy/${crop}`);
+      if (accRes.ok) {
+        const acc = await accRes.json();
+        setAccuracyData(acc);
       }
-
-      // Safe fallback
-      const fallback = getFallbackPriceForecast(crop, horizonDays);
-      setPrediction(fallback);
-      setAccuracyData({
-        overallAccuracy: 98.84,
-        mape: 1.16,
-        rSquared: 0.982,
-        directionAccuracy: 96.7,
-        lookbackDays: 1095,
-        testPoints: 1095,
-        modelType: 'Hybrid Ridge-ARIMA + Seasonal Harmonic + Mean-Reversion Anchor',
-      });
     } catch (err: any) {
-      console.warn('Price predictor API unavailable, generating local forecast:', err);
-      const fallback = getFallbackPriceForecast(crop, horizonDays);
-      setPrediction(fallback);
-      setAccuracyData({
-        overallAccuracy: 98.84,
-        mape: 1.16,
-        rSquared: 0.982,
-        directionAccuracy: 96.7,
-        lookbackDays: 1095,
-        testPoints: 1095,
-        modelType: 'Hybrid Ridge-ARIMA + Seasonal Harmonic + Mean-Reversion Anchor',
-      });
+      console.error(err);
+      setError(err.message || 'Error running forecast engine');
     } finally {
       setLoading(false);
     }
@@ -161,17 +134,17 @@ export const PricePredictorPage: React.FC = () => {
       <div className="pb-6 border-b border-slate-200">
         <div className="flex items-center gap-2 mb-1">
           <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-300">
-            Module B • 98–99% High-Precision Price Forecaster
+            Module B • Time-Series AI Price Forecasting
           </span>
           <span className="text-xs text-slate-500 flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Ensemble Kalman-Holt + Mean-Reversion & APMC Operating Rhythm
+            <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Holt-Winters / ARIMA + APMC Seasonality Engine
           </span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-display">
           AI Price Trend Predictor & Sell/Hold Advisory
         </h1>
         <p className="text-sm text-slate-600 max-w-3xl mt-1">
-          Empowering farmers to decide whether to <strong className="text-slate-900">sell immediately</strong> or <strong className="text-slate-900">hold stock</strong>. Powered by a high-precision 98–99% calibrated ensemble model backtested against 3 years of official Agmarknet & e-NAM mandi records.
+          Empowering farmers to decide whether to <strong className="text-slate-900">sell immediately</strong> or <strong className="text-slate-900">hold stock</strong>. Uses statistical exponential smoothing trained on live Agmarknet mandi historical arrivals.
         </p>
       </div>
 
@@ -354,7 +327,7 @@ export const PricePredictorPage: React.FC = () => {
                 <YAxis
                   tick={{ fontSize: 11, fill: '#64748b' }}
                   unit="₹"
-                  domain={[(dataMin: number) => Math.max(0, Math.floor(dataMin - 2)), (dataMax: number) => Math.ceil(dataMax + 2)]}
+                  domain={['auto', 'auto']}
                 />
                 <Tooltip
                   contentStyle={{
@@ -536,12 +509,11 @@ export const PricePredictorPage: React.FC = () => {
 
             <div className="mt-4 p-3 bg-slate-50 rounded-lg text-xs space-y-1 text-slate-600 border border-slate-200">
               <p className="flex items-center gap-1 font-semibold text-slate-800">
-                <Info className="w-3.5 h-3.5 text-slate-500" /> Model Architecture Specifications (98–99% Precision):
+                <Info className="w-3.5 h-3.5 text-slate-500" /> Model Architecture Specifications:
               </p>
-              <p>• Hampel outlier filter + loss-minimizing dynamic hyperparameter calibration</p>
-              <p>• Ornstein-Uhlenbeck volume-weighted equilibrium anchor preventing long-term drift</p>
-              <p>• APMC weekly micro-rhythm & crop-specific harvest elasticity harmonic indices</p>
-              <p>• First-order autoregressive AR(1) residual momentum correction</p>
+              <p>• Double Exponential Smoothing (Holt-Winters) with Dampened Linear Trend</p>
+              <p>• APMC weekly auction cycle & seasonal monsoon arrival offset factors</p>
+              <p>• Dynamic confidence intervals scaled to volatility variance</p>
             </div>
           </div>
         </div>

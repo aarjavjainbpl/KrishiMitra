@@ -1,44 +1,57 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 
-interface SendOtpResponse {
-  success: boolean;
-  phone?: string;
-  message: string;
-  smsSimulatedNotice?: string;
-  gateway?: 'FAST2SMS' | 'TWOFACTOR' | 'TWILIO' | 'MSG91' | 'SIMULATION';
-  carrierMessage?: string;
-  whatsappUrl?: string;
-  smsDeviceUri?: string;
-  expiresInSeconds?: number;
-  otp?: string;
-}
-
 interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  sendOtp: (phone: string, role?: UserRole, name?: string, district?: string) => Promise<SendOtpResponse>;
-  verifyOtp: (phone: string, otp: string, role?: UserRole, name?: string, district?: string, state?: string) => Promise<{ success: boolean; user: User }>;
-  loginWithPhone: (phone: string, otp: string, role?: UserRole, name?: string) => Promise<void>;
   login: (email: string, password?: string) => Promise<void>;
+  loginWithPhone: (phone: string, otp: string, role: UserRole, name?: string) => Promise<void>;
   register: (data: Partial<User> & { password?: string }) => Promise<void>;
   logout: () => void;
+  switchDemoUser: (role: 'farmer' | 'buyer') => void;
+  selectPersona: (personaId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Demo preset accounts for 1-click testing (Bhopal, MP Centric)
+const DEMO_USERS: Record<'farmer' | 'buyer', User> = {
+  farmer: {
+    id: 'user-farmer-1',
+    name: 'Rameshwar Patidar (Farmer)',
+    role: 'farmer',
+    phone: '+91 98260 12345',
+    email: 'ramesh.farmer@krishimitra.in',
+    passwordHash: '',
+    locationLat: 23.2350,
+    locationLng: 77.2950,
+    state: 'Madhya Pradesh',
+    district: 'Bhopal (Phanda)',
+    createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
+  },
+  buyer: {
+    id: 'user-buyer-1',
+    name: 'Bhopal Fresh Wholesale Mart (Buyer)',
+    role: 'buyer',
+    phone: '+91 98261 44556',
+    email: 'priya.buyer@freshbazaar.in',
+    passwordHash: '',
+    locationLat: 23.2985,
+    locationLng: 77.3920,
+    state: 'Madhya Pradesh',
+    district: 'Bhopal (Karond APMC)',
+    createdAt: new Date(Date.now() - 35 * 86400000).toISOString(),
+  },
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('krishimitra_user') || localStorage.getItem('agriconnect_user');
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        /* ignore */
-      }
+      try { return JSON.parse(saved); } catch (e) { /* ignore */ }
     }
-    return null;
+    return null; // Require explicit login / work role selection
   });
 
   const [token, setToken] = useState<string | null>(() => {
@@ -47,189 +60,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sync user & token to localStorage
   useEffect(() => {
-    if (user && token) {
+    if (user) {
       localStorage.setItem('krishimitra_user', JSON.stringify(user));
-      localStorage.setItem('krishimitra_token', token);
-    } else if (!user) {
+    } else {
       localStorage.removeItem('krishimitra_user');
-      localStorage.removeItem('krishimitra_token');
       localStorage.removeItem('agriconnect_user');
-      localStorage.removeItem('agriconnect_token');
     }
-  }, [user, token]);
+  }, [user]);
 
-  // Validate active token with server on initial load
-  useEffect(() => {
-    const checkAuthSession = async () => {
-      const storedToken = localStorage.getItem('krishimitra_token') || localStorage.getItem('agriconnect_token');
-      if (!storedToken) return;
-
-      try {
-        const res = await fetch('/api/auth/me', {
-          headers: {
-            Authorization: `Bearer ${storedToken}`,
-          },
-        });
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data.user) {
-            setUser(data.user);
-          }
-        } else if (res.status === 401 && contentType.includes('application/json')) {
-          // Token explicitly rejected by backend
-          setUser(null);
-          setToken(null);
-          localStorage.removeItem('krishimitra_user');
-          localStorage.removeItem('krishimitra_token');
-        }
-        // Note: 404, 500, or network errors do NOT reset the user, ensuring seamless offline/static session persistence
-      } catch (err) {
-        console.warn('Session verification fallback to cached user:', err);
-      }
-    };
-
-    checkAuthSession();
-  }, []);
-
-  // 1. Send OTP to Mobile Number
-  const sendOtp = async (
-    phone: string,
-    role: UserRole = 'farmer',
-    name?: string,
-    district?: string
-  ): Promise<SendOtpResponse> => {
+  const login = async (email: string, _password?: string) => {
     setIsLoading(true);
-    const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-
     try {
-      try {
-        const res = await fetch('/api/auth/send-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: cleanPhone,
-            role,
-            name,
-            district,
-          }),
-        });
-
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          return {
-            success: true,
-            phone: data.phone,
-            message: data.message || `OTP sent to +91 ${cleanPhone}`,
-            smsSimulatedNotice: data.smsSimulatedNotice,
-            gateway: data.gateway,
-            carrierMessage: data.carrierMessage,
-            whatsappUrl: data.whatsappUrl,
-            smsDeviceUri: data.smsDeviceUri,
-            expiresInSeconds: data.expiresInSeconds || 300,
-            otp: data.otp || '1234',
-          };
-        }
-      } catch (err) {
-        console.warn('send-otp API offline or unparseable, using simulated fallback:', err);
-      }
-
-      return {
-        success: true,
-        phone: cleanPhone,
-        message: `Verification code ready for +91 ${cleanPhone} (Code: 1234)`,
-        smsSimulatedNotice: `[Live Simulation] Verification OTP for +91 ${cleanPhone} is 1234. Valid for 10 minutes.`,
-        gateway: 'SIMULATION',
-        expiresInSeconds: 600,
-        otp: '1234',
+      const demoMatch = Object.values(DEMO_USERS).find(
+        (u) => u.email.toLowerCase() === email.toLowerCase()
+      );
+      const role: UserRole = email.includes('buyer') ? 'buyer' : 'farmer';
+      const selectedUser = demoMatch || {
+        ...DEMO_USERS[role],
+        email,
+        name: email.split('@')[0],
+        role,
       };
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 2. Verify OTP & Authenticate Session
-  const verifyOtp = async (
-    phone: string,
-    otp: string,
-    role: UserRole = 'farmer',
-    name?: string,
-    district?: string,
-    state?: string
-  ): Promise<{ success: boolean; user: User }> => {
-    setIsLoading(true);
-    const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-    const cleanOtp = otp.trim();
-
-    try {
-      try {
-        const res = await fetch('/api/auth/verify-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: cleanPhone,
-            otp: cleanOtp,
-            role,
-            name,
-            district,
-            state,
-          }),
-        });
-
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json();
-          if (res.ok && data.user) {
-            const verifiedUser: User = data.user;
-            const sessionToken: string = data.token || `km-token-${Date.now()}`;
-
-            setUser(verifiedUser);
-            setToken(sessionToken);
-            localStorage.setItem('krishimitra_user', JSON.stringify(verifiedUser));
-            localStorage.setItem('krishimitra_token', sessionToken);
-
-            return { success: true, user: verifiedUser };
-          } else if (!res.ok) {
-            if (data.error && data.error.toLowerCase().includes('incorrect')) {
-              throw new Error(data.error);
-            }
-          }
-        }
-      } catch (err: any) {
-        if (err.message && err.message.toLowerCase().includes('incorrect')) {
-          throw err;
-        }
-        console.warn('verify-otp API unavailable, checking client fallback:', err);
-      }
-
-      // Zero-failure fallback for standard demo/verification OTPs 1234 or 123456
-      if (cleanOtp === '1234' || cleanOtp === '123456') {
-        const fallbackUser: User = {
-          id: role === 'farmer' ? 'user-farmer-1' : 'user-buyer-1',
-          name: name?.trim() || (role === 'farmer' ? 'Rameshwar Patidar' : 'Bhopal Fresh Wholesale Mart'),
-          phone: `+91 ${cleanPhone || '9826012345'}`,
-          email: `${role === 'farmer' ? 'farmer' : 'buyer'}@krishimitra.in`,
-          role: role,
-          district: district?.trim() || (role === 'farmer' ? 'Bhopal (Phanda)' : 'Bhopal (Karond APMC)'),
-          state: state || 'Madhya Pradesh',
-          locationLat: role === 'farmer' ? 23.235 : 23.2985,
-          locationLng: role === 'farmer' ? 77.295 : 77.392,
-          createdAt: new Date().toISOString(),
-        };
-        const fallbackToken = `km-offline-${Date.now()}-${cleanPhone}`;
-
-        setUser(fallbackUser);
-        setToken(fallbackToken);
-        localStorage.setItem('krishimitra_user', JSON.stringify(fallbackUser));
-        localStorage.setItem('krishimitra_token', fallbackToken);
-
-        return { success: true, user: fallbackUser };
-      }
-
-      throw new Error('Incorrect OTP code entered. Please enter 1234 to verify.');
+      setUser(selectedUser);
+      const mockToken = 'demo-jwt-token-' + Date.now();
+      setToken(mockToken);
+      localStorage.setItem('krishimitra_token', mockToken);
+      localStorage.setItem('agriconnect_token', mockToken);
     } finally {
       setIsLoading(false);
     }
@@ -237,55 +94,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithPhone = async (
     phone: string,
-    otp: string,
+    _otp: string,
     role: UserRole = 'farmer',
     name?: string
   ) => {
-    await verifyOtp(phone, otp, role, name);
-  };
-
-  const login = async (email: string, password?: string) => {
     setIsLoading(true);
     try {
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        });
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json();
-          if (res.ok && data.user) {
-            setUser(data.user);
-            setToken(data.token);
-            localStorage.setItem('krishimitra_user', JSON.stringify(data.user));
-            localStorage.setItem('krishimitra_token', data.token);
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn('API login offline, applying client fallback:', e);
-      }
-
-      const role: UserRole = email.toLowerCase().includes('buyer') ? 'buyer' : 'farmer';
-      const fallbackUser: User = {
-        id: role === 'farmer' ? 'user-farmer-1' : 'user-buyer-1',
-        name: role === 'farmer' ? 'Rameshwar Patidar' : 'Bhopal Fresh Wholesale Mart',
-        email,
-        phone: '+91 98260 12345',
+      const cleanPhone = phone.trim();
+      const baseUser = DEMO_USERS[role] || DEMO_USERS.farmer;
+      const newUser: User = {
+        ...baseUser,
+        id: `user-${role}-${Date.now().toString().slice(-4)}`,
+        phone: cleanPhone.startsWith('+91') ? cleanPhone : `+91 ${cleanPhone}`,
+        name: name?.trim() || (role === 'farmer' ? 'Rameshwar Patidar' : 'Bhopal Fresh Mart'),
         role,
-        district: role === 'farmer' ? 'Bhopal (Phanda)' : 'Bhopal (Karond APMC)',
-        state: 'Madhya Pradesh',
-        locationLat: role === 'farmer' ? 23.235 : 23.2985,
-        locationLng: role === 'farmer' ? 77.295 : 77.392,
-        createdAt: new Date().toISOString(),
       };
-      const token = `km-token-${Date.now()}`;
-      setUser(fallbackUser);
-      setToken(token);
-      localStorage.setItem('krishimitra_user', JSON.stringify(fallbackUser));
-      localStorage.setItem('krishimitra_token', token);
+      setUser(newUser);
+      const mockToken = `phone-jwt-${role}-${Date.now()}`;
+      setToken(mockToken);
+      localStorage.setItem('krishimitra_token', mockToken);
+      localStorage.setItem('agriconnect_token', mockToken);
     } finally {
       setIsLoading(false);
     }
@@ -294,45 +122,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (data: Partial<User> & { password?: string }) => {
     setIsLoading(true);
     try {
-      try {
-        const res = await fetch('/api/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const resData = await res.json();
-          if (res.ok && resData.user) {
-            setUser(resData.user);
-            setToken(resData.token);
-            localStorage.setItem('krishimitra_user', JSON.stringify(resData.user));
-            localStorage.setItem('krishimitra_token', resData.token);
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn('API register offline, applying client fallback:', e);
-      }
-
-      const role: UserRole = data.role || 'farmer';
-      const fallbackUser: User = {
-        id: `user-${Date.now()}`,
-        name: data.name || (role === 'farmer' ? 'Rameshwar Patidar' : 'Bhopal Fresh Wholesale Mart'),
-        email: data.email || 'user@krishimitra.in',
-        phone: data.phone || '+91 98260 12345',
+      const role = data.role || 'farmer';
+      const newUser: User = {
+        id: `user-${role}-${Date.now()}`,
+        name: data.name || (role === 'farmer' ? 'Farmer Member' : 'Buyer Member'),
+        email: data.email || `${role}${Date.now()}@krishimitra.in`,
+        phone: data.phone || '+91 98260 00000',
         role,
-        district: data.district || 'Bhopal',
+        passwordHash: '',
         state: data.state || 'Madhya Pradesh',
-        locationLat: 23.235,
-        locationLng: 77.295,
+        district: data.district || 'Bhopal',
+        locationLat: data.locationLat || 23.25,
+        locationLng: data.locationLng || 77.41,
         createdAt: new Date().toISOString(),
       };
-      const token = `km-token-${Date.now()}`;
-      setUser(fallbackUser);
-      setToken(token);
-      localStorage.setItem('krishimitra_user', JSON.stringify(fallbackUser));
-      localStorage.setItem('krishimitra_token', token);
+      setUser(newUser);
+      const mockToken = `jwt-reg-${Date.now()}`;
+      setToken(mockToken);
+      localStorage.setItem('krishimitra_token', mockToken);
+      localStorage.setItem('agriconnect_token', mockToken);
     } finally {
       setIsLoading(false);
     }
@@ -347,18 +155,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('agriconnect_token');
   };
 
+  const switchDemoUser = (role: 'farmer' | 'buyer') => {
+    const target = DEMO_USERS[role];
+    setUser(target);
+    const mockToken = `demo-${role}-jwt-token`;
+    setToken(mockToken);
+    localStorage.setItem('krishimitra_token', mockToken);
+    localStorage.setItem('agriconnect_token', mockToken);
+  };
+
+  const selectPersona = (personaId: string) => {
+    if (personaId.includes('buyer')) {
+      switchDemoUser('buyer');
+    } else {
+      switchDemoUser('farmer');
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
         token,
         isLoading,
-        sendOtp,
-        verifyOtp,
-        loginWithPhone,
         login,
+        loginWithPhone,
         register,
         logout,
+        switchDemoUser,
+        selectPersona,
       }}
     >
       {children}

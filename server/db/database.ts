@@ -632,60 +632,22 @@ function generateSeedData(): DBState {
   let recordIdCounter = 1;
   const now = new Date();
 
-  // Generate 35 days of realistic, consistent APMC price history for each crop & market
-  // In real agricultural mandis, prices do not fluctuate wildly every day. They exhibit:
-  // 1. High autocorrelation & persistence (prices hold steady for 2-4 consecutive days)
-  // 2. Sunday / Mandi Holiday carryovers (mandis closed on Sunday, carry Saturday rate)
-  // 3. Smooth macro seasonal trends with realistic incremental adjustments
-  // 4. Geographically consistent basis spreads across markets (e.g. Delhi terminal > Karond > Berasia farm gate)
-  for (const cropConfig of cropsConfig) {
-    // 1. Pre-calculate the 35-day benchmark trajectory for this crop with price inertia
-    const benchmarkSeries: number[] = [];
-    let currentBench = cropConfig.basePrice;
+  // Generate 35 days of history for each crop & market
+  for (let dayOffset = 34; dayOffset >= 0; dayOffset--) {
+    const recordDate = new Date(now.getTime() - dayOffset * 86400000);
+    const dateString = recordDate.toISOString().split('T')[0];
 
-    for (let dayOffset = 34; dayOffset >= 0; dayOffset--) {
-      const dayIdx = 34 - dayOffset;
-      const recordDate = new Date(now.getTime() - dayOffset * 86400000);
-      const isSunday = recordDate.getDay() === 0;
-
-      if (dayIdx === 0) {
-        benchmarkSeries.push(Math.round(currentBench * 10) / 10);
-      } else if (isSunday) {
-        // Sunday: Mandis closed across APMCs, rate carried over identically from Saturday
-        benchmarkSeries.push(benchmarkSeries[benchmarkSeries.length - 1]);
-      } else {
-        // Weekdays: Prices remain steady on ~60% of days; on revision days they move along the trend
-        // Deterministic pseudo-schedule based on crop and dayIdx to ensure reproducibility
-        const stepSize = cropConfig.crop === 'Wheat' || cropConfig.crop === 'Potato' ? 0.20
-          : cropConfig.crop === 'Tomato' ? 0.40
-          : cropConfig.crop === 'Onion' ? 0.30
-          : cropConfig.crop === 'Garlic' ? 1.00
-          : 0.30;
-
-        const revisionCycle = (dayIdx * 7 + Math.round(cropConfig.basePrice)) % 5;
-        if (revisionCycle === 0 || revisionCycle === 1) {
-          const dir = cropConfig.trend >= 0 ? 1 : -1;
-          // Occasional small pullback every 8 days to simulate natural auction liquidity adjustment
-          const pull = dayIdx % 9 === 4 ? -dir : dir;
-          currentBench += pull * stepSize;
-        }
-        currentBench = Math.max(5, Math.round(currentBench * 10) / 10);
-        benchmarkSeries.push(currentBench);
-      }
-    }
-
-    // 2. Assign consistent market-specific records using the smooth benchmark series
-    for (let dayOffset = 34; dayOffset >= 0; dayOffset--) {
-      const dayIdx = 34 - dayOffset;
-      const recordDate = new Date(now.getTime() - dayOffset * 86400000);
-      const dateString = recordDate.toISOString().split('T')[0];
-      const baseToday = benchmarkSeries[dayIdx];
-
+    for (const cropConfig of cropsConfig) {
       for (const m of cropConfig.markets) {
-        // Maintain strictly consistent regional basis offset across all days
-        const modal = Math.max(4, Math.round((baseToday + m.offset) * 10) / 10);
-        const spread = Math.max(1.0, Math.round((modal * 0.07) * 10) / 10);
-        const minPrice = Math.max(2, Math.round((modal - spread) * 10) / 10);
+        const dayIdx = 34 - dayOffset;
+        const trendFactor = 1 + cropConfig.trend * dayIdx;
+        const seasonalFactor = Math.sin((dayIdx / 30) * Math.PI * 2) * (cropConfig.volatility * 0.5);
+        const noise = (Math.sin(dayIdx * 3.7 + m.market.length) * 0.5) * cropConfig.volatility;
+        
+        let modal = (cropConfig.basePrice + m.offset) * trendFactor * (1 + seasonalFactor + noise);
+        modal = Math.max(5, Math.round(modal * 10) / 10);
+        const spread = Math.round((modal * 0.08) * 10) / 10;
+        const minPrice = Math.max(3, Math.round((modal - spread) * 10) / 10);
         const maxPrice = Math.round((modal + spread) * 10) / 10;
 
         const source = dayOffset === 0 ? 'agmarknet' : (dayOffset % 3 === 0 ? 'enam' : 'seed_fallback');
@@ -872,21 +834,8 @@ class Database {
         return parsed;
       }
     } catch (err) {
-      console.warn('Could not load existing data file, checking fallback or seeding:', err);
+      console.warn('Could not load existing data file, seeding new database state:', err);
     }
-
-    try {
-      const tmpFile = path.join('/tmp', 'server_data.json');
-      if (fs.existsSync(tmpFile)) {
-        const raw = fs.readFileSync(tmpFile, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (!parsed.notifications) parsed.notifications = [];
-        return parsed;
-      }
-    } catch (e) {
-      // Ignore
-    }
-
     const initial = generateSeedData();
     this.save(initial);
     return initial;
@@ -896,12 +845,7 @@ class Database {
     try {
       fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), 'utf-8');
     } catch (err) {
-      try {
-        const tmpFile = path.join('/tmp', 'server_data.json');
-        fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf-8');
-      } catch (tmpErr) {
-        // In-memory state remains intact
-      }
+      console.error('Error persisting database:', err);
     }
   }
 
@@ -922,26 +866,10 @@ class Database {
     return this.state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
   }
 
-  public getUserByPhone(phone: string): User | undefined {
-    const clean = phone.replace(/\D/g, '').slice(-10);
-    return this.state.users.find(u => {
-      const uClean = (u.phone || '').replace(/\D/g, '').slice(-10);
-      return uClean.length === 10 && uClean === clean;
-    });
-  }
-
   public addUser(user: User): User {
     this.state.users.push(user);
     this.save(this.state);
     return user;
-  }
-
-  public updateUser(id: string, updates: Partial<User>): User | undefined {
-    const idx = this.state.users.findIndex(u => u.id === id);
-    if (idx === -1) return undefined;
-    this.state.users[idx] = { ...this.state.users[idx], ...updates };
-    this.save(this.state);
-    return this.state.users[idx];
   }
 
   // Listings

@@ -384,11 +384,7 @@ export const ListingDetailPage: React.FC = () => {
                   <ComposedChart data={history} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="date" tickFormatter={(d) => d.slice(5)} tick={{ fontSize: 10, fill: '#64748b' }} />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: '#64748b' }}
-                      unit="₹"
-                      domain={[(dataMin: number) => Math.max(0, Math.floor(dataMin - 1.5)), (dataMax: number) => Math.ceil(dataMax + 1.5)]}
-                    />
+                    <YAxis tick={{ fontSize: 10, fill: '#64748b' }} unit="₹" domain={['auto', 'auto']} />
                     <Tooltip
                       contentStyle={{ backgroundColor: '#0f172a', color: '#fff', borderRadius: '8px', fontSize: '11px' }}
                       formatter={(val: any) => [`₹${val}/kg`, 'Mandi Modal']}

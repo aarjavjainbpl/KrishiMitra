@@ -8,10 +8,6 @@ import {
   CheckCircle2,
   AlertCircle,
   TrendingUp,
-  TrendingDown,
-  Minus,
-  Activity,
-  Info,
   ArrowUpRight,
   ArrowDownRight,
   Calendar,
@@ -33,12 +29,11 @@ import {
   ComposedChart
 } from 'recharts';
 import { MandiPriceRecord } from '../types';
-import { fallbackMandiRates, getFallbackMandiHistory } from '../data/fallbackData';
 
 export const MandiRatesPage: React.FC = () => {
   const navigate = useNavigate();
   const [rates, setRates] = useState<MandiPriceRecord[]>([]);
-  const [history, setHistory] = useState<any[]>(() => getFallbackMandiHistory('Wheat', 30));
+  const [history, setHistory] = useState<any[]>([]);
   const [crops, setCrops] = useState<string[]>([]);
   const [states, setStates] = useState<string[]>([]);
   
@@ -47,15 +42,6 @@ export const MandiRatesPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [historyDays, setHistoryDays] = useState<number>(30);
   const [bhopalOnly, setBhopalOnly] = useState<boolean>(false);
-  const [chartMode, setChartMode] = useState<'modal' | 'sma' | 'both'>('modal');
-  const [priceUnit, setPriceUnit] = useState<'kg' | 'quintal'>('kg');
-  const [historySummary, setHistorySummary] = useState<{
-    startPrice?: number;
-    endPrice?: number;
-    overallChange?: number;
-    overallChangePercent?: number;
-    trendDirection?: string;
-  } | null>(null);
 
   const [loading, setLoading] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -71,25 +57,15 @@ export const MandiRatesPage: React.FC = () => {
       if (selectedState) params.append('region', selectedState);
 
       const res = await fetch(`/api/mandi-rates?${params.toString()}`);
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        if (data.rates && data.rates.length > 0) {
-          setRates(data.rates);
-          if (data.filters?.crops) setCrops(data.filters.crops);
-          if (data.filters?.states) setStates(data.filters.states);
-          if (data.lastSynced) setLastSynced(data.lastSynced);
-          return;
-        }
+      const data = await res.json();
+      if (data.rates) {
+        setRates(data.rates);
+        if (data.filters?.crops) setCrops(data.filters.crops);
+        if (data.filters?.states) setStates(data.filters.states);
+        if (data.lastSynced) setLastSynced(data.lastSynced);
       }
-      setRates(fallbackMandiRates);
-      setCrops(['Wheat', 'Tomato', 'Onion', 'Potato', 'Green Chilli', 'Rice']);
-      setStates(['Madhya Pradesh', 'Maharashtra', 'Delhi', 'Andhra Pradesh']);
     } catch (err) {
-      console.warn('Error loading mandi rates, using fallback:', err);
-      setRates(fallbackMandiRates);
-      setCrops(['Wheat', 'Tomato', 'Onion', 'Potato', 'Green Chilli', 'Rice']);
-      setStates(['Madhya Pradesh', 'Maharashtra', 'Delhi', 'Andhra Pradesh']);
+      console.error('Error loading mandi rates:', err);
     } finally {
       setLoading(false);
     }
@@ -105,22 +81,13 @@ export const MandiRatesPage: React.FC = () => {
       if (selectedState) params.append('region', selectedState);
 
       const res = await fetch(`/api/mandi-rates/history?${params.toString()}`);
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        if (data.history && data.history.length > 0) {
-          setHistory(data.history);
-          if (data.summary) {
-            setHistorySummary(data.summary);
-          }
-          return;
-        }
+      const data = await res.json();
+      if (data.history) {
+        setHistory(data.history);
       }
     } catch (err) {
-      console.warn('Mandi history fetch issue, applying precision model fallback:', err);
+      console.error('Error loading history:', err);
     }
-    // High-precision fallback so the graph always renders immediately
-    setHistory(getFallbackMandiHistory(selectedCrop, historyDays));
   };
 
   useEffect(() => {
@@ -402,375 +369,95 @@ export const MandiRatesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Wholesale Historical Price Chart (Recharts) */}
+      {/* 30-Day Historical Price Chart (Recharts) */}
       <div className="mt-6 bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
-        {/* Header & Controls */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-bold text-slate-900">
-                {selectedCrop} Wholesale Price Trend (Last {historyDays} Days)
-              </h2>
-              <span className="bg-emerald-50 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                <Activity className="w-3 h-3 text-emerald-600" />
-                Continuous Market Clearing
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Wholesale modal auction clearing rates across reporting APMC terminals with realistic price inertia and Sunday closures
+            <h2 className="text-lg font-bold text-slate-900">
+              {selectedCrop} Wholesale Price Trend (Last {historyDays} Days)
+            </h2>
+            <p className="text-xs text-slate-500">
+              Daily Modal Price (₹/kg) with Minimum and Maximum Auction Bands across reporting mandis
             </p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* View Mode Switcher */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
-              <button
-                type="button"
-                onClick={() => setChartMode('modal')}
-                className={`px-2.5 py-1 font-semibold rounded-md transition-all ${
-                  chartMode === 'modal'
-                    ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Modal Rate
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartMode('sma')}
-                className={`px-2.5 py-1 font-semibold rounded-md transition-all ${
-                  chartMode === 'sma'
-                    ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                7D Trendline
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartMode('both')}
-                className={`px-2.5 py-1 font-semibold rounded-md transition-all ${
-                  chartMode === 'both'
-                    ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Both
-              </button>
-            </div>
-
-            {/* Price Unit Switcher */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
-              <button
-                type="button"
-                onClick={() => setPriceUnit('kg')}
-                className={`px-2 py-1 font-semibold rounded-md transition-all ${
-                  priceUnit === 'kg'
-                    ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                ₹/kg
-              </button>
-              <button
-                type="button"
-                onClick={() => setPriceUnit('quintal')}
-                className={`px-2 py-1 font-semibold rounded-md transition-all ${
-                  priceUnit === 'quintal'
-                    ? 'bg-white text-emerald-800 shadow-xs border border-slate-200'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                ₹/Quintal
-              </button>
-            </div>
+          <div className="flex items-center gap-3 text-xs font-semibold">
+            <span className="flex items-center gap-1.5 text-emerald-700">
+              <span className="w-3 h-3 rounded-full bg-emerald-600 inline-block"></span>
+              Modal Price
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-500">
+              <span className="w-3 h-1 bg-slate-300 inline-block"></span>
+              Min/Max Spread Band
+            </span>
           </div>
         </div>
 
-        {(() => {
-          const rawData = history && history.length > 0 ? history : getFallbackMandiHistory(selectedCrop, historyDays);
-          const multiplier = priceUnit === 'quintal' ? 100 : 1;
-          const unitLabel = priceUnit === 'quintal' ? '₹/Qtl' : '₹/kg';
-
-          const chartData = rawData.map((d: any) => ({
-            ...d,
-            modalPriceDisplay: Math.round(d.modalPrice * multiplier * 10) / 10,
-            minPriceDisplay: Math.round(d.minPrice * multiplier * 10) / 10,
-            maxPriceDisplay: Math.round(d.maxPrice * multiplier * 10) / 10,
-            sma7Display: d.sma7
-              ? Math.round(d.sma7 * multiplier * 10) / 10
-              : Math.round(d.modalPrice * multiplier * 10) / 10,
-            changeDisplay: Math.round((d.change || 0) * multiplier * 10) / 10,
-          }));
-
-          const startPrice = chartData.length > 0 ? chartData[0].modalPriceDisplay : 0;
-          const endPrice = chartData.length > 0 ? chartData[chartData.length - 1].modalPriceDisplay : 0;
-          const diff = Math.round((endPrice - startPrice) * 10) / 10;
-          const diffPercent = startPrice > 0 ? Math.round(((endPrice - startPrice) / startPrice) * 1000) / 10 : 0;
-          const stableDaysCount = chartData.filter((d) => Math.abs(d.change || 0) < 0.05).length;
-          const stablePct = chartData.length > 0 ? Math.round((stableDaysCount / chartData.length) * 100) : 60;
-
-          // Compute realistic bounded Y-Axis
-          const valuesToBound: number[] = [];
-          for (const d of chartData) {
-            if (chartMode === 'sma') {
-              valuesToBound.push(d.sma7Display);
-            } else {
-              valuesToBound.push(d.minPriceDisplay, d.maxPriceDisplay, d.modalPriceDisplay);
-            }
-          }
-          const minVal = valuesToBound.length > 0 ? Math.min(...valuesToBound) : 20;
-          const maxVal = valuesToBound.length > 0 ? Math.max(...valuesToBound) : 35;
-          const pad = priceUnit === 'quintal' ? 80 : 1.2;
-          const yDomain = [
-            Math.max(0, Math.floor(minVal - pad)),
-            Math.ceil(maxVal + pad),
-          ];
-
-          return (
-            <div>
-              {/* Consistency & Market Dynamics Banner */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4 bg-slate-50/90 p-3 rounded-lg border border-slate-200">
-                <div className="flex items-center gap-2">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                    diff > 0.1 ? 'bg-emerald-100 text-emerald-800'
-                      : diff < -0.1 ? 'bg-amber-100 text-amber-800'
-                      : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {diff > 0.1 ? <TrendingUp className="w-4 h-4" />
-                      : diff < -0.1 ? <TrendingDown className="w-4 h-4" />
-                      : <Minus className="w-4 h-4" />}
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                      {historyDays}-Day Price Trend
-                    </span>
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1">
-                      {diff > 0.1 ? `Uptrend (+${diffPercent}%)`
-                        : diff < -0.1 ? `Softening (${diffPercent}%)`
-                        : 'Range-Bound / Stable'}
-                      <span className="text-slate-500 font-normal">
-                        ({diff >= 0 ? `+₹${diff}` : `-₹${Math.abs(diff)}`} {unitLabel})
-                      </span>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                      APMC Price Inertia
-                    </span>
-                    <span className="text-xs font-bold text-slate-900">
-                      {stablePct}% Days Stable / Benchmarked
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
-                    <Calendar className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Sunday APMC Status
-                    </span>
-                    <span className="text-xs font-medium text-slate-700">
-                      Auction Closed (Saturday Carryover)
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Chart Canvas */}
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="mandiModalGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#059669" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="#059669" stopOpacity={0.0} />
-                      </linearGradient>
-                      <linearGradient id="mandiSpreadGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#e2e8f0" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#f8fafc" stopOpacity={0.1} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={(str) => str.slice(5)}
-                      tick={{ fontSize: 11, fill: '#64748b' }}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: '#64748b' }}
-                      unit="₹"
-                      domain={yDomain}
-                    />
-                    <Tooltip
-                      content={({ active, payload }) => {
-                        if (!active || !payload || !payload.length) return null;
-                        const pt = payload[0].payload;
-                        const dt = new Date(pt.date);
-                        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                        const dayName = dayNames[dt.getDay()];
-                        const isClosed = dt.getDay() === 0 || pt.isClosed;
-                        const chg = pt.change || 0;
-
-                        return (
-                          <div className="bg-slate-900 text-white p-3 rounded-xl shadow-2xl border border-slate-700 text-xs min-w-[210px]">
-                            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
-                              <div>
-                                <div className="font-bold text-slate-200">{pt.date}</div>
-                                <div className="text-[10px] text-slate-400">{dayName}</div>
-                              </div>
-                              <span
-                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                                  isClosed
-                                    ? 'bg-amber-950 text-amber-300 border border-amber-800/80'
-                                    : 'bg-emerald-950 text-emerald-300 border border-emerald-800/80'
-                                }`}
-                              >
-                                {isClosed ? 'Mandi Closed' : 'Auction Day'}
-                              </span>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              <div className="flex items-baseline justify-between">
-                                <span className="text-slate-400">Modal Price:</span>
-                                <span className="text-sm font-extrabold text-emerald-400">
-                                  ₹{pt.modalPriceDisplay?.toFixed(1)} {unitLabel}
-                                </span>
-                              </div>
-
-                              {pt.sma7Display && (chartMode === 'sma' || chartMode === 'both') && (
-                                <div className="flex items-baseline justify-between">
-                                  <span className="text-slate-400">7-Day Trend Avg:</span>
-                                  <span className="font-bold text-blue-300">
-                                    ₹{pt.sma7Display?.toFixed(1)} {unitLabel}
-                                  </span>
-                                </div>
-                              )}
-
-                              <div className="flex items-baseline justify-between">
-                                <span className="text-slate-400">Day-over-Day:</span>
-                                <span
-                                  className={`font-semibold ${
-                                    chg > 0.05
-                                      ? 'text-emerald-400'
-                                      : chg < -0.05
-                                      ? 'text-rose-400'
-                                      : 'text-slate-300'
-                                  }`}
-                                >
-                                  {chg > 0.05
-                                    ? `+₹${(chg * multiplier).toFixed(1)} (Firming)`
-                                    : chg < -0.05
-                                    ? `-₹${Math.abs(chg * multiplier).toFixed(1)} (Easing)`
-                                    : '₹0.0 (Unchanged rate)'}
-                                </span>
-                              </div>
-
-                              <div className="pt-1.5 border-t border-slate-800 flex justify-between text-[11px] text-slate-400">
-                                <span>Auction Spread:</span>
-                                <span className="font-medium text-slate-300">
-                                  ₹{pt.minPriceDisplay} – ₹{pt.maxPriceDisplay}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }}
-                    />
-
-                    {/* Spread Upper & Lower Corridor (Only in modal or both mode) */}
-                    {(chartMode === 'modal' || chartMode === 'both') && (
-                      <>
-                        <Line
-                          type="monotone"
-                          dataKey="maxPriceDisplay"
-                          name="Max Auction Price"
-                          stroke="#cbd5e1"
-                          strokeWidth={1}
-                          strokeDasharray="2 2"
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="minPriceDisplay"
-                          name="Min Auction Price"
-                          stroke="#cbd5e1"
-                          strokeWidth={1}
-                          strokeDasharray="2 2"
-                          dot={false}
-                        />
-                      </>
-                    )}
-
-                    {/* Modal Price Line / Area */}
-                    {(chartMode === 'modal' || chartMode === 'both') && (
-                      <Area
-                        type="monotone"
-                        dataKey="modalPriceDisplay"
-                        name="Modal Clearing Price"
-                        stroke="#059669"
-                        strokeWidth={2.5}
-                        fill="url(#mandiModalGrad)"
-                        dot={{ r: 2.5, fill: '#059669', strokeWidth: 0 }}
-                        activeDot={{ r: 5, fill: '#059669', stroke: '#ffffff', strokeWidth: 2 }}
-                      />
-                    )}
-
-                    {/* 7-Day Moving Average Line */}
-                    {(chartMode === 'sma' || chartMode === 'both') && (
-                      <Line
-                        type="monotone"
-                        dataKey="sma7Display"
-                        name="7-Day Moving Average"
-                        stroke="#2563eb"
-                        strokeWidth={2}
-                        strokeDasharray={chartMode === 'both' ? '4 4' : undefined}
-                        dot={chartMode === 'sma' ? { r: 2.5, fill: '#2563eb' } : false}
-                        activeDot={{ r: 5, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 2 }}
-                      />
-                    )}
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Legend Ribbon */}
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs border-t border-slate-100 pt-3">
-                <div className="flex items-center gap-4 text-xs font-medium text-slate-600">
-                  {(chartMode === 'modal' || chartMode === 'both') && (
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-full bg-emerald-600 inline-block"></span>
-                      Modal Rate (Prevailing Auction)
-                    </span>
-                  )}
-                  {(chartMode === 'sma' || chartMode === 'both') && (
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-1 bg-blue-600 inline-block"></span>
-                      7-Day Moving Avg Trendline
-                    </span>
-                  )}
-                  {(chartMode === 'modal' || chartMode === 'both') && (
-                    <span className="flex items-center gap-1.5 text-slate-400">
-                      <span className="w-3 h-0.5 bg-slate-300 border-t border-dashed border-slate-400 inline-block"></span>
-                      Auction Spread Band
-                    </span>
-                  )}
-                </div>
-
-                <span className="text-[11px] text-slate-500">
-                  Data frequency: Daily APMC wholesale auctions (Sundays closed)
-                </span>
-              </div>
+        <div className="h-72 w-full">
+          {history.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={history} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="mandiModalGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#059669" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#059669" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={(str) => str.slice(5)}
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  unit="₹"
+                  domain={['auto', 'auto']}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#0f172a',
+                    color: '#fff',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    border: 'none',
+                  }}
+                  formatter={(value: any) => [`₹${value}/kg`, '']}
+                  labelFormatter={(lbl) => `Date: ${lbl}`}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="maxPrice"
+                  name="Max Price Band"
+                  stroke="#cbd5e1"
+                  strokeDasharray="2 2"
+                  fill="#f1f5f9"
+                  fillOpacity={0.5}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="modalPrice"
+                  name="Modal Price"
+                  stroke="#059669"
+                  strokeWidth={3}
+                  fill="url(#mandiModalGrad)"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="minPrice"
+                  name="Min Price Band"
+                  stroke="#94a3b8"
+                  strokeWidth={1.5}
+                  strokeDasharray="3 3"
+                  dot={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+              Loading price history chart...
             </div>
-          );
-        })()}
+          )}
+        </div>
       </div>
 
       {/* Mandi Rates Data Table with Source Badges */}

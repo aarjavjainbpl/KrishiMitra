@@ -29,8 +29,6 @@ import {
   DollarSign
 } from 'lucide-react';
 import { QualityPrediction } from '../types';
-import { evaluateCropQuality } from '../services/qualityEngine';
-import { analyzeImagePixels, PixelAnalysisResult } from '../utils/cropVision';
 
 export const QualityPredictorPage: React.FC = () => {
   const navigate = useNavigate();
@@ -40,7 +38,6 @@ export const QualityPredictorPage: React.FC = () => {
 
   const [inputMode, setInputMode] = useState<'upload' | 'camera' | 'presets'>('presets');
   const [selectedCropHint, setSelectedCropHint] = useState<string>('Tomato');
-  const [inspectionMode, setInspectionMode] = useState<'auto' | 'diseased' | 'damaged' | 'healthy'>('auto');
   const [previewUrl, setPreviewUrl] = useState<string>(
     'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=800&auto=format&fit=crop&q=80'
   );
@@ -67,12 +64,12 @@ export const QualityPredictorPage: React.FC = () => {
     },
     {
       id: 'tomato-blight-c',
-      label: '⚠️ Blighted / Rotten Tomato (Late Blight - Grade C)',
+      label: '⚠️ Blighted Tomato (Early Blight - Grade C)',
       crop: 'Tomato',
       type: 'diseased',
       grade: 'C',
-      badge: 'Late Blight & Rot',
-      description: 'Sunken water-soaked rot, necrotic lesions, tissue liquefaction',
+      badge: 'Fungal Blight',
+      description: 'Concentric necrotic rings, fungal spot lesions on calyx',
       url: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=800&auto=format&fit=crop&q=80&defect=blight_rot',
     },
     {
@@ -107,13 +104,13 @@ export const QualityPredictorPage: React.FC = () => {
     },
     {
       id: 'potato-scab-c',
-      label: '⚠️ Scabbed & Soft Rot Potato (Grade C)',
+      label: '⚠️ Scabbed Potato (Common Scab - Grade C)',
       crop: 'Potato',
       type: 'diseased',
       grade: 'C',
-      badge: 'Scab & Rot',
+      badge: 'Scab Lesions',
       description: 'Corky raised scab lesions and sub-surface necrotic patches',
-      url: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=800&auto=format&fit=crop&q=80&defect=scab_rot',
+      url: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=800&auto=format&fit=crop&q=80&defect=scab_lesions',
     },
     {
       id: 'chilli-healthy-a',
@@ -126,16 +123,6 @@ export const QualityPredictorPage: React.FC = () => {
       url: 'https://images.unsplash.com/photo-1588252303782-cb80119abd6d?w=800&auto=format&fit=crop&q=80',
     },
     {
-      id: 'chilli-anthracnose-c',
-      label: '⚠️ Anthracnose Rotten Chilli (Fruit Rot - Grade C)',
-      crop: 'Green Chilli',
-      type: 'diseased',
-      grade: 'C',
-      badge: 'Fruit Rot',
-      description: 'Circular sunken black necrotic lesions, shriveled bleached pods',
-      url: 'https://images.unsplash.com/photo-1588252303782-cb80119abd6d?w=800&auto=format&fit=crop&q=80&defect=anthracnose_rot',
-    },
-    {
       id: 'wheat-healthy-a',
       label: '🌾 Sharbati Wheat (Grade A - Lustrous Grain)',
       crop: 'Wheat',
@@ -144,16 +131,6 @@ export const QualityPredictorPage: React.FC = () => {
       badge: 'Grade A Grain',
       description: 'High test weight, uniform golden luster, zero karnal bunt',
       url: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=800&auto=format&fit=crop&q=80',
-    },
-    {
-      id: 'wheat-karnal-bunt-c',
-      label: '⚠️ Karnal Bunt & Black Point Wheat (Grade C)',
-      crop: 'Wheat',
-      type: 'diseased',
-      grade: 'C',
-      badge: 'Black Point Spores',
-      description: 'Blackened embryo point, fishy trimethylamine fungal spores',
-      url: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=800&auto=format&fit=crop&q=80&defect=karnal_bunt',
     },
     {
       id: 'garlic-healthy-a',
@@ -260,96 +237,46 @@ export const QualityPredictorPage: React.FC = () => {
     setSelectedFile(null);
     stopCamera();
     setInputMode('presets');
-    const mode = preset.type === 'diseased' ? 'diseased' : 'healthy';
-    setInspectionMode(mode);
-    runAnalysis(preset.url, null, preset.crop, mode);
+    // Auto trigger analysis for seamless testing
+    runAnalysis(preset.url, null, preset.crop);
   };
 
-  const runAnalysis = async (
-    imgUrl?: string,
-    file?: File | null,
-    crop?: string,
-    modeOverride?: 'auto' | 'diseased' | 'damaged' | 'healthy'
-  ) => {
+  const runAnalysis = async (imgUrl?: string, file?: File | null, crop?: string) => {
     const targetCrop = crop || selectedCropHint;
     const targetImgUrl = imgUrl || previewUrl;
     const targetFile = file !== undefined ? file : selectedFile;
-    const currentMode = modeOverride || inspectionMode;
 
     setAnalyzing(true);
     setError(null);
     try {
-      // 1. Client-side pixel computer vision analysis for instant local necrosis detection
-      let pixelCV: PixelAnalysisResult | undefined;
-      try {
-        if (targetFile) {
-          pixelCV = await analyzeImagePixels(targetFile);
-        } else if (targetImgUrl) {
-          pixelCV = await analyzeImagePixels(targetImgUrl);
-        }
-      } catch (cvErr) {
-        console.warn('Pixel CV scanning note:', cvErr);
-      }
+      let res;
+      if (targetFile) {
+        const formData = new FormData();
+        formData.append('image', targetFile);
+        formData.append('cropHint', targetCrop);
 
-      let candidatePrediction: QualityPrediction | null = null;
-      try {
-        let res;
-        if (targetFile) {
-          const formData = new FormData();
-          formData.append('image', targetFile);
-          formData.append('cropHint', targetCrop);
-          formData.append('conditionMode', currentMode);
-
-          res = await fetch('/api/quality-predictor/analyze', {
-            method: 'POST',
-            body: formData,
-          });
-        } else {
-          res = await fetch('/api/quality-predictor/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              imageUrl: targetImgUrl,
-              cropHint: targetCrop,
-              conditionMode: currentMode,
-            }),
-          });
-        }
-
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data.prediction) {
-            candidatePrediction = data.prediction;
-          }
-        }
-      } catch (networkErr) {
-        console.info('Backend quality service offline or slow, evaluating with local ICAR expert engine:', networkErr);
-      }
-
-      // If backend was unreachable or returned non-JSON, run the high-precision ICAR diagnostic engine
-      if (!candidatePrediction) {
-        candidatePrediction = evaluateCropQuality({
-          cropHint: targetCrop,
-          imageUrl: targetImgUrl,
-          imageFileName: targetFile?.name,
-          isCustomUpload: !!targetFile,
-          conditionMode: currentMode,
-          pixelResult: pixelCV,
+        res = await fetch('/api/quality-predictor/analyze', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        res = await fetch('/api/quality-predictor/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageUrl: targetImgUrl,
+            cropHint: targetCrop,
+          }),
         });
       }
 
-      setPrediction(candidatePrediction);
+      if (!res.ok) throw new Error('Analysis failed');
+      const data = await res.json();
+      setPrediction(data.prediction);
       fetchHistory();
     } catch (err: any) {
       console.error(err);
-      // Final fallback to guarantee an answer is always rendered
-      const fallbackPred = evaluateCropQuality({
-        cropHint: targetCrop,
-        imageUrl: targetImgUrl,
-        conditionMode: currentMode,
-      });
-      setPrediction(fallbackPred);
+      setError(err.message || 'Error analyzing produce quality and crop health');
     } finally {
       setAnalyzing(false);
     }
@@ -511,89 +438,6 @@ export const QualityPredictorPage: React.FC = () => {
                   </option>
                 ))}
               </select>
-            </div>
-
-            {/* Diagnostic Sensitivity & Disease Detection Mode */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider">
-                  Pathology & Disease Scan Mode
-                </label>
-                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">ICAR Standard</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInspectionMode('auto');
-                    if (previewUrl && !cameraActive) runAnalysis(previewUrl, selectedFile, selectedCropHint, 'auto');
-                  }}
-                  className={`p-2.5 rounded-xl border-2 text-left transition-all ${
-                    inspectionMode === 'auto'
-                      ? 'border-emerald-600 bg-emerald-50/80 text-emerald-950 font-bold shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600 text-xs'
-                  }`}
-                >
-                  <div className="font-extrabold text-xs flex items-center gap-1.5">
-                    <span>🤖 Auto AI Scanner</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Pixel necrosis & vision scan</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInspectionMode('diseased');
-                    if (previewUrl && !cameraActive) runAnalysis(previewUrl, selectedFile, selectedCropHint, 'diseased');
-                  }}
-                  className={`p-2.5 rounded-xl border-2 text-left transition-all ${
-                    inspectionMode === 'diseased'
-                      ? 'border-rose-600 bg-rose-50/90 text-rose-950 font-bold shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600 text-xs'
-                  }`}
-                >
-                  <div className="font-extrabold text-xs flex items-center gap-1.5 text-rose-700">
-                    <span>🦠 Check Disease / Rot</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Late blight, soft rot, scab, mold</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInspectionMode('damaged');
-                    if (previewUrl && !cameraActive) runAnalysis(previewUrl, selectedFile, selectedCropHint, 'damaged');
-                  }}
-                  className={`p-2.5 rounded-xl border-2 text-left transition-all ${
-                    inspectionMode === 'damaged'
-                      ? 'border-amber-600 bg-amber-50/90 text-amber-950 font-bold shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600 text-xs'
-                  }`}
-                >
-                  <div className="font-extrabold text-xs flex items-center gap-1.5 text-amber-700">
-                    <span>⚠️ Grade B Defect</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Cosmetic marks, minor scars</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInspectionMode('healthy');
-                    if (previewUrl && !cameraActive) runAnalysis(previewUrl, selectedFile, selectedCropHint, 'healthy');
-                  }}
-                  className={`p-2.5 rounded-xl border-2 text-left transition-all ${
-                    inspectionMode === 'healthy'
-                      ? 'border-teal-600 bg-teal-50/90 text-teal-950 font-bold shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600 text-xs'
-                  }`}
-                >
-                  <div className="font-extrabold text-xs flex items-center gap-1.5 text-teal-700">
-                    <span>🌟 Prime Grade A</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Certified disease-free lot</div>
-                </button>
-              </div>
             </div>
 
             {/* Live Camera Viewport Mode */}

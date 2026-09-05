@@ -22,7 +22,6 @@ import {
 import { Listing } from '../types';
 import { FairPriceBadge } from '../components/FairPriceBadge';
 import { ImageGradeInspectionModal } from '../components/ImageGradeInspectionModal';
-import { fallbackListings } from '../data/fallbackData';
 
 export const BuyerBrowsePage: React.FC = () => {
   const navigate = useNavigate();
@@ -50,46 +49,13 @@ export const BuyerBrowsePage: React.FC = () => {
       if (filterRegion) params.append('region', filterRegion);
       if (filterGrade) params.append('qualityGrade', filterGrade);
 
-      let loaded: Listing[] = [];
       const res = await fetch(`/api/listings?${params.toString()}`);
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        if (data.listings && data.listings.length > 0) {
-          loaded = data.listings;
-        }
+      const data = await res.json();
+      if (data.listings) {
+        setListings(data.listings);
       }
-      if (loaded.length === 0) {
-        loaded = [...fallbackListings];
-      }
-
-      // Merge locally published harvests
-      try {
-        const localSaved: Listing[] = JSON.parse(localStorage.getItem('krishimitra_local_listings') || '[]');
-        if (localSaved.length > 0) {
-          const existingIds = new Set(loaded.map(l => l.id));
-          const newItems = localSaved.filter(item => !existingIds.has(item.id));
-          loaded = [...newItems, ...loaded];
-        }
-      } catch {
-        // Non-blocking
-      }
-
-      setListings(loaded);
     } catch (e) {
-      console.warn('Error loading listings, using fallback:', e);
-      let fallbackCombined = [...fallbackListings];
-      try {
-        const localSaved: Listing[] = JSON.parse(localStorage.getItem('krishimitra_local_listings') || '[]');
-        if (localSaved.length > 0) {
-          const existingIds = new Set(fallbackCombined.map(l => l.id));
-          const newItems = localSaved.filter(item => !existingIds.has(item.id));
-          fallbackCombined = [...newItems, ...fallbackCombined];
-        }
-      } catch {
-        // Non-blocking
-      }
-      setListings(fallbackCombined);
+      console.error('Error loading listings:', e);
     } finally {
       setLoading(false);
     }
@@ -97,16 +63,6 @@ export const BuyerBrowsePage: React.FC = () => {
 
   useEffect(() => {
     fetchListings();
-
-    const handleUpdate = () => {
-      fetchListings();
-    };
-    window.addEventListener('krishimitra_listings_updated', handleUpdate);
-    window.addEventListener('storage', handleUpdate);
-    return () => {
-      window.removeEventListener('krishimitra_listings_updated', handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
-    };
   }, [searchCrop, filterRegion, filterGrade]);
 
   const sortedListings = React.useMemo(() => {
