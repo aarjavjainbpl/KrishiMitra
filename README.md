@@ -94,6 +94,24 @@ http://localhost:3000
 
 ---
 
+## ☁️ Deploying to Vercel (or Render / Railway)
+
+### Why API keys are not in GitHub / Vercel automatically
+By default, Git and GitHub **deliberately ignore `.env` files** (via `.gitignore`) to protect your private credentials and prevent secret leaks. In Google AI Studio, API keys are injected directly into the container runtime. When exporting or deploying, you configure the keys in your hosting dashboard:
+
+### Setting up on Vercel:
+1. **Push or Import your repository to Vercel**.
+2. Go to **Vercel Dashboard** → Select your Project → **Settings** → **Environment Variables**.
+3. Add the following environment variables:
+   - `GEMINI_API_KEY`: Your Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+   - `DATA_GOV_IN_API_KEY`: (Optional) Your API key from [data.gov.in](https://data.gov.in/) for live mandi sync. *(If left blank, KrishiMitra automatically uses its built-in offline mandi database).*
+   - `JWT_SECRET`: A random secret string (e.g. `krishimitra-secret-2026`).
+4. Select all environments: **Production**, **Preview**, and **Development**.
+5. Save and click **Redeploy**.
+6. The app includes `vercel.json` and `api/index.ts` pre-configured to automatically route `/api/*` requests through Vercel Serverless!
+
+---
+
 ## 🚀 Building & Running for Production
 
 To create an optimized, bundled standalone production build:
@@ -106,6 +124,26 @@ npm run build
 npm start
 ```
 The production server will serve both the backend API and frontend SPA at `http://localhost:3000`.
+
+---
+
+## 🚀 Deploying to Vercel (Zero Setup Required)
+
+The project is pre-configured with `vercel.json` and a serverless backend function in `api/index.ts` to deploy smoothly to Vercel:
+
+1. **Import Repository in Vercel**:
+   - Go to [vercel.com/new](https://vercel.com/new) and import your KrishiMitra GitHub repository.
+2. **Build Settings**:
+   - **Framework Preset**: `Vite`
+   - **Build Command**: `npm run build` (or leave default)
+   - **Output Directory**: `dist`
+3. **Environment Variables** *(Optional)*:
+   - Go to **Project Settings > Environment Variables** on Vercel and add:
+     - `GEMINI_API_KEY`: Your Google AI Studio Gemini API Key (optional; offline ICAR agronomist CV engine acts as active backup if not provided).
+     - `DATA_GOV_IN_API_KEY`: Your data.gov.in API key for live Agmarknet sync (optional; comprehensive APMC dataset is bundled).
+     - `JWT_SECRET`: Any random string for signing auth tokens (optional; fallback provided).
+4. **Click Deploy**:
+   - Vercel will automatically build the React Vite frontend and deploy all backend REST endpoints (`/api/*`) as high-performance Serverless Functions with ephemeral disk handling and client-side compression.
 
 ---
 

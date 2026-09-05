@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import {
   User,
   Listing,
@@ -12,7 +13,15 @@ import {
 } from '../../src/types';
 import bcrypt from 'bcryptjs';
 
-const DATA_FILE = path.join(process.cwd(), 'server_data.json');
+const isServerless = Boolean(
+  process.env.VERCEL || 
+  process.env.AWS_LAMBDA_FUNCTION_NAME || 
+  process.env.LAMBDA_TASK_ROOT ||
+  process.env.VERCEL_ENV
+);
+
+const ROOT_DATA_FILE = path.join(process.cwd(), 'server_data.json');
+const TMP_DATA_FILE = path.join(os.tmpdir(), 'server_data.json');
 
 export interface DBState {
   users: User[];
@@ -826,26 +835,62 @@ class Database {
   }
 
   private load(): DBState {
+    // 1. In serverless environments, check tmp file first (preserves state during container warm period)
+    if (isServerless) {
+      try {
+        if (fs.existsSync(TMP_DATA_FILE)) {
+          const raw = fs.readFileSync(TMP_DATA_FILE, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (!parsed.notifications) parsed.notifications = [];
+          return parsed;
+        }
+      } catch (err) {
+        console.warn('Could not read from serverless tmp database:', err);
+      }
+    }
+
+    // 2. Load from bundled root data file
     try {
-      if (fs.existsSync(DATA_FILE)) {
-        const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+      if (fs.existsSync(ROOT_DATA_FILE)) {
+        const raw = fs.readFileSync(ROOT_DATA_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
         if (!parsed.notifications) parsed.notifications = [];
+        if (isServerless) {
+          try {
+            fs.writeFileSync(TMP_DATA_FILE, raw, 'utf-8');
+          } catch {}
+        }
         return parsed;
       }
     } catch (err) {
       console.warn('Could not load existing data file, seeding new database state:', err);
     }
+
+    // 3. Fallback to generating seed data
     const initial = generateSeedData();
     this.save(initial);
     return initial;
   }
 
   private save(state: DBState) {
+    const serialized = JSON.stringify(state, null, 2);
+    if (isServerless) {
+      try {
+        fs.writeFileSync(TMP_DATA_FILE, serialized, 'utf-8');
+        return;
+      } catch (err) {
+        console.warn('Could not save to tmp in serverless mode:', err);
+      }
+    }
+
     try {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), 'utf-8');
+      fs.writeFileSync(ROOT_DATA_FILE, serialized, 'utf-8');
     } catch (err) {
-      console.error('Error persisting database:', err);
+      try {
+        fs.writeFileSync(TMP_DATA_FILE, serialized, 'utf-8');
+      } catch (tmpErr) {
+        console.warn('In-memory database operating (disk write skipped):', err);
+      }
     }
   }
 

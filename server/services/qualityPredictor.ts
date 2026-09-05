@@ -150,22 +150,19 @@ Format your response STRICTLY as valid JSON without markdown fences:
         let responseText: string | undefined;
         try {
           const response = await ai.models.generateContent({
-            model: 'gemini-3.7-flash',
+            model: 'gemini-2.5-flash',
             contents: parts,
           });
           responseText = response.text;
         } catch (initialErr: any) {
-          if (initialErr?.status === 503 || initialErr?.message?.includes('503') || initialErr?.message?.includes('demand')) {
-            await new Promise((resolve) => setTimeout(resolve, 350));
-            try {
-              const retryResponse = await ai.models.generateContent({
-                model: 'gemini-3.7-flash',
-                contents: parts,
-              });
-              responseText = retryResponse.text;
-            } catch {
-              // Graceful fallback to built-in ICAR expert CV model
-            }
+          try {
+            const retryResponse = await ai.models.generateContent({
+              model: 'gemini-3.8-flash',
+              contents: parts,
+            });
+            responseText = retryResponse.text;
+          } catch {
+            // Graceful fallback to built-in ICAR expert CV model
           }
         }
 
