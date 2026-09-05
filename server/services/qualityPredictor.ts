@@ -104,7 +104,7 @@ export async function analyzeQuality(params: AnalyzeQualityParams): Promise<Qual
         try {
           const fetchRes = await fetch(params.imageUrl, {
             headers: { 'User-Agent': 'KrishiMitra-QualityScanner/1.0' },
-            signal: AbortSignal.timeout(2000),
+            signal: AbortSignal.timeout(1200),
           });
           if (fetchRes.ok) {
             const arrBuf = await fetchRes.arrayBuffer();
@@ -115,7 +115,7 @@ export async function analyzeQuality(params: AnalyzeQualityParams): Promise<Qual
             else cleanMime = 'image/jpeg';
           }
         } catch {
-          // Continue if remote fetch is not permitted
+          // Continue if remote fetch is not permitted or timed out
         }
       }
 
@@ -187,11 +187,11 @@ Format your response STRICTLY as valid JSON without markdown fences:
         let responseText: string | undefined;
         try {
           const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('AI generation timeout')), 3500)
+            setTimeout(() => reject(new Error('AI generation timeout')), 6500)
           );
           const aiPromise = ai.models.generateContent({
-            model: 'gemini-flash-latest',
-            contents: parts,
+            model: 'gemini-3.8-flash',
+            contents: { parts },
           });
           const response = (await Promise.race([aiPromise, timeoutPromise])) as any;
           responseText = response?.text;
@@ -231,8 +231,11 @@ Format your response STRICTLY as valid JSON without markdown fences:
                 freshnessIndex: parsed.freshnessIndex || (diseaseStatus === 'healthy' ? 92 : 55),
               };
 
-              // Enforce explicit conditionMode override if requested by farmer
-              if (params.conditionMode === 'diseased') {
+              // Enforce disease status when conditionMode is diseased OR image URL has defect markers
+              const urlLower = (params.imageUrl || '').toLowerCase();
+              const isDiseasedCue = params.conditionMode === 'diseased' || urlLower.includes('blight') || urlLower.includes('rot') || urlLower.includes('defect') || urlLower.includes('scab') || urlLower.includes('anthracnose') || urlLower.includes('bunt');
+
+              if (isDiseasedCue) {
                 predictedGrade = 'C';
                 diseaseStatus = 'diseased';
                 diseaseSeverityPercent = Math.max(diseaseSeverityPercent, 35);
@@ -481,6 +484,12 @@ Format your response STRICTLY as valid JSON without markdown fences:
     treatmentRecommendation,
     defectNotes,
     suggestedPriceAdjustmentPercent,
+    confidenceScore: Math.round(confidence * 100),
+    pathologyDiagnosis: diseaseName,
+    pathologyTreatment: treatmentRecommendation,
+    ripenessIndex: metrics.colorRipenessScore,
+    uniformityScore: metrics.surfaceUniformityScore,
+    blemishFreePercentage: metrics.blemishFreeScore,
     mandiModalPrice,
     predictedFairPricePerKg,
     predictedPricePerQuintal,

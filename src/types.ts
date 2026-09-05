@@ -89,6 +89,12 @@ export interface QualityPrediction {
   treatmentRecommendation?: string;
   defectNotes: string[];
   suggestedPriceAdjustmentPercent: number;
+  confidenceScore?: number;
+  pathologyDiagnosis?: string;
+  pathologyTreatment?: string;
+  ripenessIndex?: number;
+  uniformityScore?: number;
+  blemishFreePercentage?: number;
   // Image-Graded Right Price Prediction Fields
   mandiModalPrice: number; // Current APMC Mandi Modal benchmark (₹/kg)
   predictedFairPricePerKg: number; // Exact AI-Graded Right Price (₹/kg)
@@ -112,15 +118,17 @@ export interface Order {
   listingId: string;
   buyerId: string;
   buyerName: string;
-  buyerPhone: string;
+  buyerPhone?: string;
   farmerId: string;
   farmerName: string;
   cropName: string;
+  variety?: string;
   quantityKg: number;
-  agreedPricePerKg: number;
+  agreedPricePerKg?: number;
+  unitPricePerKg?: number;
   totalAmount: number;
-  fairPriceScore: number;
-  fairPriceBreakdown: {
+  fairPriceScore?: number;
+  fairPriceBreakdown?: {
     askingPrice: number;
     mandiModalPrice: number;
     qualityGrade: 'A' | 'B' | 'C';
@@ -135,7 +143,10 @@ export interface Order {
   deliveryLng: number;
   deliveryAddress: string;
   status: 'pending' | 'confirmed' | 'ready_for_pickup' | 'in_transit' | 'delivered' | 'cancelled';
+  qualityGrade?: 'A' | 'B' | 'C';
+  escrowStatus?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface AppNotification {

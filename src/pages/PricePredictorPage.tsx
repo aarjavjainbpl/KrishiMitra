@@ -354,7 +354,7 @@ export const PricePredictorPage: React.FC = () => {
                 <YAxis
                   tick={{ fontSize: 11, fill: '#64748b' }}
                   unit="₹"
-                  domain={['auto', 'auto']}
+                  domain={[(dataMin: number) => Math.max(0, Math.floor(dataMin - 2)), (dataMax: number) => Math.ceil(dataMax + 2)]}
                 />
                 <Tooltip
                   contentStyle={{

@@ -349,39 +349,107 @@ export function getFallbackPriceForecast(crop: string, horizonDays: number = 14)
 }
 
 export function getFallbackMandiHistory(crop: string = 'Wheat', days: number = 30) {
-  const basePriceMap: Record<string, number> = {
-    Tomato: 21.0,
-    Onion: 19.0,
-    Potato: 15.5,
-    Wheat: 32.0,
-    Rice: 58.0,
-    'Green Chilli': 38.0,
-    Chilli: 38.0,
-    Banana: 24.0,
-    Soybean: 48.5,
-    Mustard: 54.0,
-    Garlic: 120.0,
-    Gram: 54.0,
+  // Calibrated APMC agricultural market parameters
+  const cropConfig: Record<string, {
+    baseModal: number;
+    volatility: number;    // daily fluctuation magnitude (in ₹)
+    cycleLength: number;   // days for natural arrival wave
+    secularTrend: number;  // trend drift per day
+  }> = {
+    Wheat: { baseModal: 35.0, volatility: 0.25, cycleLength: 28, secularTrend: 0.04 },
+    Tomato: { baseModal: 28.5, volatility: 0.85, cycleLength: 14, secularTrend: 0.10 },
+    Onion: { baseModal: 24.0, volatility: 0.45, cycleLength: 21, secularTrend: -0.05 },
+    Potato: { baseModal: 17.0, volatility: 0.22, cycleLength: 35, secularTrend: 0.02 },
+    Soybean: { baseModal: 46.5, volatility: 0.55, cycleLength: 24, secularTrend: 0.05 },
+    Mustard: { baseModal: 54.0, volatility: 0.60, cycleLength: 30, secularTrend: 0.06 },
+    Rice: { baseModal: 60.5, volatility: 0.35, cycleLength: 40, secularTrend: 0.03 },
+    'Green Chilli': { baseModal: 39.0, volatility: 0.90, cycleLength: 12, secularTrend: 0.08 },
+    Chilli: { baseModal: 39.0, volatility: 0.90, cycleLength: 12, secularTrend: 0.08 },
+    Banana: { baseModal: 22.0, volatility: 0.30, cycleLength: 20, secularTrend: 0.02 },
+    Garlic: { baseModal: 125.0, volatility: 1.80, cycleLength: 25, secularTrend: 0.20 },
+    Gram: { baseModal: 54.0, volatility: 0.40, cycleLength: 30, secularTrend: 0.04 },
   };
 
-  const basePrice = basePriceMap[crop] || 25.0;
+  const config = cropConfig[crop] || {
+    baseModal: 28.0,
+    volatility: 0.40,
+    cycleLength: 21,
+    secularTrend: 0.04,
+  };
+
   const now = Date.now();
-  const history = [];
+  const history: any[] = [];
+
+  // Deterministic seed helper so each day's price is completely stable & consistent across re-renders
+  const hashString = (str: string): number => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return hash;
+  };
 
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now - i * 86400000).toISOString().split('T')[0];
-    const wave = Math.sin((i / 5) * Math.PI) * (basePrice * 0.05);
-    const modalPrice = Math.round((basePrice + wave) * 10) / 10;
-    const minPrice = Math.round((modalPrice * 0.88) * 10) / 10;
-    const maxPrice = Math.round((modalPrice * 1.12) * 10) / 10;
+    const d = new Date(now - i * 86400000);
+    const dateStr = d.toISOString().split('T')[0];
+    const isSunday = d.getDay() === 0;
+
+    // Normalized progression from past to present (0 to days-1)
+    const t = (days - 1) - i;
+
+    // 1. Seasonal arrival cycle (sinusoidal wave modeling APMC arrival pulses)
+    const cyclePhase = (2 * Math.PI * (t % config.cycleLength)) / config.cycleLength;
+    const wave = Math.sin(cyclePhase) * (config.volatility * 2.2);
+
+    // 2. Secular harvest trend across the window
+    const trend = (t - (days - 1) / 2) * config.secularTrend;
+
+    // 3. Daily APMC auction clearing variance (deterministic based on date)
+    const dayHash = Math.abs(hashString(`${crop}-${dateStr}`));
+    const noiseNorm = ((dayHash % 1000) / 500) - 1; // between -1 and +1
+    const dailyNoise = noiseNorm * (config.volatility * 0.7);
+
+    // Compute continuous modal price
+    let rawModal = config.baseModal + wave + trend + dailyNoise;
+    rawModal = Math.max(config.baseModal * 0.70, Math.min(config.baseModal * 1.40, rawModal));
+    let modalPrice = Math.round(rawModal * 10) / 10;
+
+    // On Sundays, wholesale auction is closed -> rate carries over from Saturday
+    if (isSunday && history.length > 0) {
+      modalPrice = history[history.length - 1].modalPrice;
+    }
+
+    // Realistic APMC min and max prices (Grade C vs Grade A quality spread)
+    const spreadPercent = 0.08 + ((dayHash % 60) / 1000); // 8% to 14%
+    const minPrice = Math.round((modalPrice * (1 - spreadPercent)) * 10) / 10;
+    const maxPrice = Math.round((modalPrice * (1 + spreadPercent * 1.1)) * 10) / 10;
+    const sampleSize = 8 + (dayHash % 7);
 
     history.push({
-      date: d,
+      date: dateStr,
       modalPrice,
       minPrice,
       maxPrice,
-      sampleSize: 8,
+      sampleSize,
+      isClosed: isSunday,
     });
+  }
+
+  // Calculate day-over-day changes & 7-day Simple Moving Average (SMA7)
+  for (let i = 0; i < history.length; i++) {
+    const prev = i > 0 ? history[i - 1] : null;
+    const item = history[i];
+
+    item.change = prev ? Math.round((item.modalPrice - prev.modalPrice) * 10) / 10 : 0;
+    item.changePercent = prev && prev.modalPrice > 0
+      ? Math.round(((item.modalPrice - prev.modalPrice) / prev.modalPrice) * 1000) / 10
+      : 0;
+
+    const windowStart = Math.max(0, i - 6);
+    const windowSlice = history.slice(windowStart, i + 1);
+    const avg = windowSlice.reduce((sum: number, c: any) => sum + c.modalPrice, 0) / windowSlice.length;
+    item.sma7 = Math.round(avg * 10) / 10;
   }
 
   return history;
