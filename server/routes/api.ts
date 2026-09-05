@@ -460,6 +460,13 @@ router.get('/price-predictor/accuracy/:crop', (req: Request, res: Response) => {
 router.post('/quality-predictor/analyze', upload.single('image'), async (req: any, res: Response) => {
   try {
     const cropHint = req.body.cropHint || 'Produce';
+    const expectedType = req.body.expectedType;
+    const expectedGrade = req.body.expectedGrade;
+    const defectHint = req.body.defectHint;
+    const symptomsObserved = Array.isArray(req.body.symptomsObserved)
+      ? req.body.symptomsObserved
+      : (req.body.symptomsObserved ? [req.body.symptomsObserved] : undefined);
+
     let imageUrl = req.body.imageUrl;
     let imageBuffer: Buffer | undefined = undefined;
     let mimeType: string | undefined = undefined;
@@ -490,6 +497,10 @@ router.post('/quality-predictor/analyze', upload.single('image'), async (req: an
       imageBuffer,
       mimeType,
       cropHint,
+      expectedType,
+      expectedGrade,
+      defectHint,
+      symptomsObserved,
     });
 
     res.json({ prediction });

@@ -157,7 +157,7 @@ Write a concise 2-sentence actionable, encouraging recommendation in simple plai
     } catch (e: any) {
       try {
         const retryResp = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
+          model: 'gemini-3.1-flash-lite',
           contents: `Advise farmer on ${crop} price change (${forecastChangePercent}% in ${validHorizon} days). Recommend action concisely.`,
         });
         if (retryResp.text && retryResp.text.trim().length > 20) {
