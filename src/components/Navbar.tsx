@@ -351,24 +351,12 @@ export const Navbar: React.FC = () => {
               </div>
             </div>
 
-            {/* Download Project ZIP Button */}
-            <a
-              href="/api/download-zip"
-              download="krishimitra-app.zip"
-              id="download-project-zip-btn"
-              title="Download full project source code as ZIP"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-colors shadow-2xs"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-700" />
-              <span className="hidden md:inline">Download ZIP</span>
-            </a>
-
-            {/* Logout & Change Role Button */}
+            {/* Logout Button */}
             <button
               type="button"
               id="nav-logout-btn"
               onClick={handleLogout}
-              title="Logout / Change Role"
+              title="Logout Session"
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors shadow-2xs"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -435,14 +423,6 @@ export const Navbar: React.FC = () => {
           })}
 
           <div className="pt-3 border-t border-slate-100 space-y-2">
-            <a
-              href="/api/download-zip"
-              download="krishimitra-app.zip"
-              className="w-full py-2.5 px-3 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-black text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-2"
-            >
-              <Download className="w-4 h-4 text-emerald-700" />
-              <span>📥 Download Project ZIP Source</span>
-            </a>
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
@@ -451,7 +431,7 @@ export const Navbar: React.FC = () => {
               className="w-full py-2.5 px-3 bg-rose-50 text-rose-700 hover:bg-rose-100 font-black text-xs rounded-xl border border-rose-200 flex items-center justify-center gap-2"
             >
               <LogOut className="w-4 h-4" />
-              <span>Logout / Switch Role</span>
+              <span>Logout Session</span>
             </button>
           </div>
         </div>

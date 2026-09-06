@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { QualityPrediction, Listing } from '../types';
+import { resolveDisplayImage, getCropFallbackImage } from '../utils/cropImages';
 
 interface ImageGradeInspectionModalProps {
   isOpen: boolean;
@@ -109,8 +110,12 @@ export const ImageGradeInspectionModal: React.FC<ImageGradeInspectionModalProps>
             <div className="md:col-span-5 flex flex-col space-y-3">
               <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 group aspect-4/3">
                 <img
-                  src={listing.photoUrl}
+                  src={resolveDisplayImage(listing.photoUrl, qp?.imageUrl, listing.cropName)}
                   alt={listing.cropName}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = getCropFallbackImage(listing.cropName);
+                  }}
                   className={`w-full h-full object-cover transition-transform duration-300 ${zoomMode ? 'scale-150 cursor-zoom-out' : 'cursor-zoom-in'}`}
                   onClick={() => setZoomMode(!zoomMode)}
                 />

@@ -37,6 +37,7 @@ import {
 import { Listing } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { FairPriceBadge } from '../components/FairPriceBadge';
+import { resolveDisplayImage, getCropFallbackImage } from '../utils/cropImages';
 
 export const ListingDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -53,6 +54,8 @@ export const ListingDetailPage: React.FC = () => {
   );
   const [placingOrder, setPlacingOrder] = useState<boolean>(false);
   const [orderSuccess, setOrderSuccess] = useState<boolean>(false);
+  const [imageZoomed, setImageZoomed] = useState<boolean>(false);
+  const [gradeGuideOpen, setGradeGuideOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchListing = async () => {
@@ -132,8 +135,6 @@ export const ListingDetailPage: React.FC = () => {
     );
   }
 
-  const [imageZoomed, setImageZoomed] = useState<boolean>(false);
-  const [gradeGuideOpen, setGradeGuideOpen] = useState<boolean>(false);
 
   const totalAmount = Math.round(orderQty * listing.askingPricePerKg);
   const qp = listing.qualityPrediction;
@@ -185,8 +186,12 @@ export const ListingDetailPage: React.FC = () => {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="relative aspect-16/10 bg-slate-900 overflow-hidden group">
               <img
-                src={listing.photoUrl}
+                src={resolveDisplayImage(listing.photoUrl, qp?.imageUrl, listing.cropName)}
                 alt={listing.cropName}
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = getCropFallbackImage(listing.cropName);
+                }}
                 className={`w-full h-full object-cover transition-transform duration-300 ${imageZoomed ? 'scale-150 cursor-zoom-out' : 'cursor-zoom-in'}`}
                 onClick={() => setImageZoomed(!imageZoomed)}
               />

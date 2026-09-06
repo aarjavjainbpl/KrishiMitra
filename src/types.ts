@@ -135,6 +135,9 @@ export interface Order {
   deliveryLng: number;
   deliveryAddress: string;
   status: 'pending' | 'confirmed' | 'ready_for_pickup' | 'in_transit' | 'delivered' | 'cancelled';
+  paymentStatus?: 'held' | 'released' | 'refunded';
+  deliveredAt?: string;
+  settlementRemarks?: string;
   createdAt: string;
 }
 
@@ -188,6 +191,11 @@ export interface Payment {
   farmerId: string;
   amount: number;
   status: 'held' | 'released' | 'refunded';
+  escrowHeldAt?: string;
   releasedAt?: string;
+  transactionRef?: string;
+  settlementMethod?: string;
+  settledByRole?: 'buyer' | 'farmer';
+  deliveryRemarks?: string;
   createdAt: string;
 }

@@ -30,7 +30,7 @@ import { UserRole } from '../types';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, loginWithPhone, switchDemoUser } = useAuth();
+  const { user } = useAuth();
   const [selectedCrop, setSelectedCrop] = useState<'Wheat' | 'Tomato' | 'Potato'>('Wheat');
 
   // Start Interface State for Low-Literacy Users
@@ -60,7 +60,6 @@ export const HomePage: React.FC = () => {
 
   const handleStartRoleChange = (role: UserRole) => {
     setStartRole(role);
-    switchDemoUser(role);
     if (role === 'farmer') {
       speakText('नमस्ते किसान भाई! फसल बेचने, मंडी भाव देखने या कैमरा जांच के लिए नीचे दिए गए बड़े बटनों पर दबाएं।');
     } else {
@@ -340,10 +339,10 @@ export const HomePage: React.FC = () => {
             </p>
           </div>
 
-          {/* Quick Demo Persona Triggers */}
+          {/* Quick Launch Portals */}
           <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5 shrink-0">
             <button
-              onClick={() => { switchDemoUser('farmer'); navigate('/farmer/dashboard'); }}
+              onClick={() => navigate(user?.role === 'farmer' ? '/farmer/place-harvest' : '/login')}
               className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-2xl shadow-md shadow-emerald-900/40 transition-all flex items-center justify-between gap-3 group active:scale-98"
             >
               <span>👨‍🌾 Launch Farmer Hub</span>
@@ -351,7 +350,7 @@ export const HomePage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => { switchDemoUser('buyer'); navigate('/buyer/browse'); }}
+              onClick={() => navigate(user?.role === 'buyer' ? '/buyer/browse' : '/login')}
               className="px-5 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-xs rounded-2xl backdrop-blur-xs transition-all flex items-center justify-between gap-3"
             >
               <span>🏢 Launch Wholesale Store</span>

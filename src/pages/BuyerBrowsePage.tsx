@@ -22,6 +22,7 @@ import {
 import { Listing } from '../types';
 import { FairPriceBadge } from '../components/FairPriceBadge';
 import { ImageGradeInspectionModal } from '../components/ImageGradeInspectionModal';
+import { resolveDisplayImage, getCropFallbackImage } from '../utils/cropImages';
 
 export const BuyerBrowsePage: React.FC = () => {
   const navigate = useNavigate();
@@ -183,8 +184,12 @@ export const BuyerBrowsePage: React.FC = () => {
                   {/* Photo with Grade Badge & Quick Image Inspect Button */}
                   <div className="relative aspect-16/9 bg-slate-100 overflow-hidden">
                     <img
-                      src={item.photoUrl}
+                      src={resolveDisplayImage(item.photoUrl, item.qualityPrediction?.imageUrl, item.cropName)}
                       alt={item.cropName}
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = getCropFallbackImage(item.cropName);
+                      }}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     

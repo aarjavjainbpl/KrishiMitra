@@ -17,11 +17,16 @@ import {
   Edit2,
   Trash2,
   Calendar,
-  X
+  X,
+  Receipt,
+  Landmark
 } from 'lucide-react';
 import { Listing, Order } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { FairPriceBadge } from '../components/FairPriceBadge';
+import { resolveDisplayImage, getCropFallbackImage } from '../utils/cropImages';
+import { FarmerDeliveryModal } from '../components/FarmerDeliveryModal';
+import { SettlementReceiptModal } from '../components/SettlementReceiptModal';
 
 export const FarmerDashboardPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -31,6 +36,10 @@ export const FarmerDashboardPage: React.FC = () => {
   const [listings, setListings] = useState<Listing[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Delivery Handover & Escrow Settlement Modal State for Farmers
+  const [farmerDeliveryModalOrder, setFarmerDeliveryModalOrder] = useState<Order | null>(null);
+  const [settlementReceiptOrder, setSettlementReceiptOrder] = useState<Order | null>(null);
 
   // New Listing Modal State
   const [showModal, setShowModal] = useState<boolean>(
@@ -56,6 +65,17 @@ export const FarmerDashboardPage: React.FC = () => {
 
   // Live Mandi benchmark price lookup helper for the modal
   const [liveMandiPrice, setLiveMandiPrice] = useState<number>(22);
+
+  // VRP Route Optimization & Buyer Notification Modal State
+  const [vrpModal, setVrpModal] = useState<{
+    isOpen: boolean;
+    order: Order | null;
+    clusterInfo: any;
+  }>({
+    isOpen: false,
+    order: null,
+    clusterInfo: null,
+  });
 
   // Check prefill data from Quality Predictor (Module C)
   useEffect(() => {
@@ -119,17 +139,6 @@ export const FarmerDashboardPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [cropName]);
-
-  // VRP Route Optimization & Buyer Notification Modal State
-  const [vrpModal, setVrpModal] = useState<{
-    isOpen: boolean;
-    order: Order | null;
-    clusterInfo: any;
-  }>({
-    isOpen: false,
-    order: null,
-    clusterInfo: null,
-  });
 
   // Handle Order Status Progression
   const handleUpdateOrderStatus = async (orderId: string, newStatus: string, targetOrder?: Order) => {
@@ -462,7 +471,11 @@ export const FarmerDashboardPage: React.FC = () => {
                     <span>•</span>
                     <span className="flex items-center gap-1">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      Escrow: <strong className="text-slate-700">{ord.paymentStatus}</strong>
+                      Escrow: {ord.status === 'delivered' || ord.paymentStatus === 'released' ? (
+                        <strong className="text-emerald-700 font-bold">Settled (Disbursed)</strong>
+                      ) : (
+                        <strong className="text-slate-700">{ord.paymentStatus}</strong>
+                      )}
                     </span>
                   </div>
                 </div>
@@ -471,35 +484,52 @@ export const FarmerDashboardPage: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   {ord.status === 'confirmed' && (
                     <button
-                      onClick={() => handleUpdateOrderStatus(ord.id, 'ready_for_pickup')}
-                      className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-all"
+                      onClick={() => handleUpdateOrderStatus(ord.id, 'ready_for_pickup', ord)}
+                      className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-all cursor-pointer"
                     >
                       Mark Ready for Pickup
                     </button>
                   )}
 
                   {ord.status === 'ready_for_pickup' && (
-                    <button
-                      onClick={() => handleUpdateOrderStatus(ord.id, 'in_transit')}
-                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-all flex items-center gap-1"
-                    >
-                      <Truck className="w-3.5 h-3.5" /> Mark Dispatched (In Transit)
-                    </button>
+                    <span className="text-xs text-amber-800 font-semibold flex items-center gap-1.5 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Ready for Pickup (Awaiting Buyer)</span>
+                    </span>
                   )}
 
                   {ord.status === 'in_transit' && (
-                    <button
-                      onClick={() => handleUpdateOrderStatus(ord.id, 'delivered')}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-all flex items-center gap-1"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Confirm Delivery
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-blue-800 font-semibold flex items-center gap-1.5 bg-blue-50 px-2.5 py-1.5 rounded-lg border border-blue-200">
+                        <Truck className="w-3.5 h-3.5 text-blue-600" />
+                        <span>In Transit</span>
+                      </span>
+                      <button
+                        id={`farmer-dash-confirm-delivery-btn-${ord.id}`}
+                        onClick={() => setFarmerDeliveryModalOrder(ord)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-lg shadow-xs transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-200" />
+                        <span>Confirm Handover & Settle</span>
+                      </button>
+                    </div>
                   )}
 
                   {ord.status === 'delivered' && (
-                    <span className="text-xs text-emerald-700 font-bold flex items-center gap-1 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
-                      <CheckCircle2 className="w-4 h-4" /> Delivered & Settled
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-emerald-800 font-extrabold flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-300">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Delivered & Settled</span>
+                      </span>
+                      <button
+                        id={`farmer-dash-view-receipt-btn-${ord.id}`}
+                        onClick={() => setSettlementReceiptOrder(ord)}
+                        className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-bold rounded-lg border border-emerald-300 shadow-2xs transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                      >
+                        <Receipt className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Settlement Voucher</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -529,8 +559,12 @@ export const FarmerDashboardPage: React.FC = () => {
               <div>
                 <div className="relative aspect-16/9 bg-slate-100">
                   <img
-                    src={item.photoUrl}
+                    src={resolveDisplayImage(item.photoUrl, item.qualityPrediction?.imageUrl, item.cropName)}
                     alt={item.cropName}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = getCropFallbackImage(item.cropName);
+                    }}
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute top-2.5 left-2.5">
@@ -710,17 +744,58 @@ export const FarmerDashboardPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Photo URL / Image */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Produce Photo URL
+              {/* Photo Upload & Preview */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-700">
+                  Produce Photo
                 </label>
-                <input
-                  type="url"
-                  value={photoUrl}
-                  onChange={(e) => setPhotoUrl(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-900 focus:ring-emerald-500 focus:border-emerald-500"
-                />
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 relative">
+                    <img
+                      src={resolveDisplayImage(photoUrl, undefined, cropName)}
+                      alt="Produce Preview"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = getCropFallbackImage(cropName);
+                      }}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition-colors">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Upload Photo from Device</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            const file = e.target.files[0];
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              if (typeof reader.result === 'string') {
+                                setPhotoUrl(reader.result);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="Or enter image URL"
+                      value={photoUrl.startsWith('data:') ? 'Custom Photo Uploaded ✓' : photoUrl}
+                      onChange={(e) => {
+                        if (!e.target.value.includes('Custom Photo Uploaded')) {
+                          setPhotoUrl(e.target.value);
+                        }
+                      }}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs text-slate-900 focus:ring-emerald-500 focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Description */}
@@ -844,6 +919,29 @@ export const FarmerDashboardPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Farmer Delivery Handover & Escrow Settlement Modal */}
+      {farmerDeliveryModalOrder && (
+        <FarmerDeliveryModal
+          isOpen={true}
+          order={farmerDeliveryModalOrder}
+          onClose={() => setFarmerDeliveryModalOrder(null)}
+          onSuccess={(settledOrder) => {
+            setFarmerDeliveryModalOrder(null);
+            fetchData();
+            setSettlementReceiptOrder(settledOrder);
+          }}
+        />
+      )}
+
+      {/* Escrow Settlement Receipt Voucher Modal */}
+      {settlementReceiptOrder && (
+        <SettlementReceiptModal
+          isOpen={true}
+          order={settlementReceiptOrder}
+          onClose={() => setSettlementReceiptOrder(null)}
+        />
       )}
     </div>
   );

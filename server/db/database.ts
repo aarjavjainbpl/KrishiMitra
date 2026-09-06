@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import {
   User,
   Listing,
@@ -13,15 +12,7 @@ import {
 } from '../../src/types';
 import bcrypt from 'bcryptjs';
 
-const isServerless = Boolean(
-  process.env.VERCEL || 
-  process.env.AWS_LAMBDA_FUNCTION_NAME || 
-  process.env.LAMBDA_TASK_ROOT ||
-  process.env.VERCEL_ENV
-);
-
-const ROOT_DATA_FILE = path.join(process.cwd(), 'server_data.json');
-const TMP_DATA_FILE = path.join(os.tmpdir(), 'server_data.json');
+const DATA_FILE = path.join(process.cwd(), 'server_data.json');
 
 export interface DBState {
   users: User[];
@@ -835,62 +826,26 @@ class Database {
   }
 
   private load(): DBState {
-    // 1. In serverless environments, check tmp file first (preserves state during container warm period)
-    if (isServerless) {
-      try {
-        if (fs.existsSync(TMP_DATA_FILE)) {
-          const raw = fs.readFileSync(TMP_DATA_FILE, 'utf-8');
-          const parsed = JSON.parse(raw);
-          if (!parsed.notifications) parsed.notifications = [];
-          return parsed;
-        }
-      } catch (err) {
-        console.warn('Could not read from serverless tmp database:', err);
-      }
-    }
-
-    // 2. Load from bundled root data file
     try {
-      if (fs.existsSync(ROOT_DATA_FILE)) {
-        const raw = fs.readFileSync(ROOT_DATA_FILE, 'utf-8');
+      if (fs.existsSync(DATA_FILE)) {
+        const raw = fs.readFileSync(DATA_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
         if (!parsed.notifications) parsed.notifications = [];
-        if (isServerless) {
-          try {
-            fs.writeFileSync(TMP_DATA_FILE, raw, 'utf-8');
-          } catch {}
-        }
         return parsed;
       }
     } catch (err) {
       console.warn('Could not load existing data file, seeding new database state:', err);
     }
-
-    // 3. Fallback to generating seed data
     const initial = generateSeedData();
     this.save(initial);
     return initial;
   }
 
   private save(state: DBState) {
-    const serialized = JSON.stringify(state, null, 2);
-    if (isServerless) {
-      try {
-        fs.writeFileSync(TMP_DATA_FILE, serialized, 'utf-8');
-        return;
-      } catch (err) {
-        console.warn('Could not save to tmp in serverless mode:', err);
-      }
-    }
-
     try {
-      fs.writeFileSync(ROOT_DATA_FILE, serialized, 'utf-8');
+      fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), 'utf-8');
     } catch (err) {
-      try {
-        fs.writeFileSync(TMP_DATA_FILE, serialized, 'utf-8');
-      } catch (tmpErr) {
-        console.warn('In-memory database operating (disk write skipped):', err);
-      }
+      console.error('Error persisting database:', err);
     }
   }
 
@@ -911,25 +866,69 @@ class Database {
     return this.state.users.find(u => u.email.toLowerCase() === email.toLowerCase());
   }
 
+  public getUserByPhone(phone: string): User | undefined {
+    const clean = phone.replace(/\D/g, '').slice(-10);
+    return this.state.users.find(u => {
+      const uClean = (u.phone || '').replace(/\D/g, '').slice(-10);
+      return uClean.length === 10 && uClean === clean;
+    });
+  }
+
   public addUser(user: User): User {
     this.state.users.push(user);
     this.save(this.state);
     return user;
   }
 
+  public updateUser(id: string, updates: Partial<User>): User | undefined {
+    const idx = this.state.users.findIndex(u => u.id === id);
+    if (idx === -1) return undefined;
+    this.state.users[idx] = { ...this.state.users[idx], ...updates };
+    this.save(this.state);
+    return this.state.users[idx];
+  }
+
   // Listings
+  private sanitizeListing(listing: Listing): Listing {
+    if (!listing.photoUrl || listing.photoUrl.startsWith('blob:')) {
+      if (listing.qualityPredictionId) {
+        const qp = this.state.qualityPredictions?.find(q => q.id === listing.qualityPredictionId);
+        if (qp && qp.imageUrl && !qp.imageUrl.startsWith('blob:')) {
+          return { ...listing, photoUrl: qp.imageUrl };
+        }
+      }
+      const cropPresets: Record<string, string> = {
+        wheat: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=800&auto=format&fit=crop&q=80',
+        tomato: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=800&auto=format&fit=crop&q=80',
+        potato: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=800&auto=format&fit=crop&q=80',
+        onion: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=800&auto=format&fit=crop&q=80',
+        soybean: 'https://images.unsplash.com/photo-1599940824399-b87987ceb72a?w=800&auto=format&fit=crop&q=80',
+        rice: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=800&auto=format&fit=crop&q=80',
+        mustard: 'https://images.unsplash.com/photo-1615485500704-8e990f9900f7?w=800&auto=format&fit=crop&q=80',
+        chilli: 'https://images.unsplash.com/photo-1588252303782-cb80119abd6d?w=800&auto=format&fit=crop&q=80',
+      };
+      const key = (listing.cropName || '').toLowerCase();
+      const match = Object.keys(cropPresets).find(k => key.includes(k));
+      const fallback = match ? cropPresets[match] : 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=800&auto=format&fit=crop&q=80';
+      return { ...listing, photoUrl: fallback };
+    }
+    return listing;
+  }
+
   public getListings(): Listing[] {
-    return this.state.listings;
+    return this.state.listings.map(l => this.sanitizeListing(l));
   }
 
   public getListingById(id: string): Listing | undefined {
-    return this.state.listings.find(l => l.id === id);
+    const l = this.state.listings.find(item => item.id === id);
+    return l ? this.sanitizeListing(l) : undefined;
   }
 
   public addListing(listing: Listing): Listing {
-    this.state.listings.unshift(listing);
+    const sanitized = this.sanitizeListing(listing);
+    this.state.listings.unshift(sanitized);
     this.save(this.state);
-    return listing;
+    return sanitized;
   }
 
   public updateListing(id: string, updates: Partial<Listing>): Listing | undefined {
@@ -999,10 +998,17 @@ class Database {
     return order;
   }
 
-  public updateOrderStatus(id: string, status: Order['status']): Order | undefined {
+  public updateOrderStatus(id: string, status: Order['status'], extra?: Partial<Order>): Order | undefined {
     const idx = this.state.orders.findIndex(o => o.id === id);
     if (idx === -1) return undefined;
     this.state.orders[idx].status = status;
+    if (status === 'delivered') {
+      this.state.orders[idx].deliveredAt = this.state.orders[idx].deliveredAt || new Date().toISOString();
+      this.state.orders[idx].paymentStatus = 'released';
+    }
+    if (extra) {
+      this.state.orders[idx] = { ...this.state.orders[idx], ...extra };
+    }
     this.save(this.state);
     return this.state.orders[idx];
   }
@@ -1037,12 +1043,46 @@ class Database {
     return payment;
   }
 
-  public updatePaymentStatus(orderId: string, status: Payment['status']): Payment | undefined {
-    const idx = this.state.payments.findIndex(p => p.orderId === orderId);
-    if (idx === -1) return undefined;
+  public updatePaymentStatus(orderId: string, status: Payment['status'], extra?: Partial<Payment>): Payment | undefined {
+    let idx = this.state.payments.findIndex(p => p.orderId === orderId);
+    if (idx === -1) {
+      const order = this.state.orders.find(o => o.id === orderId);
+      if (order) {
+        const newPay: Payment = {
+          id: `pay-${Date.now()}`,
+          orderId: order.id,
+          buyerId: order.buyerId,
+          farmerId: order.farmerId,
+          amount: order.totalAmount,
+          status: status,
+          escrowHeldAt: order.createdAt,
+          releasedAt: status === 'released' ? new Date().toISOString() : undefined,
+          transactionRef: `UTR-ESCROW-${Date.now().toString().slice(-8)}`,
+          settlementMethod: extra?.settlementMethod || 'Direct DBT Bank Transfer / Mandi Escrow Payout',
+          createdAt: order.createdAt || new Date().toISOString(),
+        };
+        this.state.payments.unshift(newPay);
+        idx = 0;
+      } else {
+        return undefined;
+      }
+    }
     this.state.payments[idx].status = status;
     if (status === 'released') {
-      this.state.payments[idx].releasedAt = new Date().toISOString();
+      this.state.payments[idx].releasedAt = this.state.payments[idx].releasedAt || new Date().toISOString();
+      if (!this.state.payments[idx].transactionRef) {
+        this.state.payments[idx].transactionRef = `UTR-ESCROW-${Date.now().toString().slice(-8)}`;
+      }
+      if (!this.state.payments[idx].settlementMethod) {
+        this.state.payments[idx].settlementMethod = 'Direct DBT Bank Transfer / Mandi Escrow Payout';
+      }
+    }
+    if (extra) {
+      this.state.payments[idx] = { ...this.state.payments[idx], ...extra };
+    }
+    const orderIdx = this.state.orders.findIndex(o => o.id === orderId);
+    if (orderIdx !== -1) {
+      this.state.orders[orderIdx].paymentStatus = status;
     }
     this.save(this.state);
     return this.state.payments[idx];

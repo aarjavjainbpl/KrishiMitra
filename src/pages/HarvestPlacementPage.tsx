@@ -32,8 +32,6 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { Listing, Order, QualityPrediction } from '../types';
 import { FairPriceBadge } from '../components/FairPriceBadge';
-import { compressImageFile } from '../utils/imageCompressor';
-import { createClientFallbackQualityPrediction } from '../utils/qualityFallback';
 
 interface CropPreset {
   id: string;
@@ -331,6 +329,17 @@ export const HarvestPlacementPage: React.FC = () => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setUploadedFile(file);
+
+      // Convert to base64 Data URL so the image is persistent and visible across all users
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setInspectionImage(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+
+      // Instant preview fallback
       const url = URL.createObjectURL(file);
       setInspectionImage(url);
       setQualityInspection(null);
@@ -345,9 +354,8 @@ export const HarvestPlacementPage: React.FC = () => {
     try {
       let res;
       if (uploadedFile) {
-        const readyFile = await compressImageFile(uploadedFile);
         const formData = new FormData();
-        formData.append('image', readyFile);
+        formData.append('image', uploadedFile);
         formData.append('cropHint', selectedCrop.name);
         res = await fetch('/api/quality-predictor/analyze', {
           method: 'POST',
@@ -364,17 +372,16 @@ export const HarvestPlacementPage: React.FC = () => {
         });
       }
 
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
-      }
+      if (!res.ok) throw new Error('AI Quality inspection failed');
       const data = await res.json();
-      if (!data.prediction) {
-        throw new Error('Missing prediction in response');
-      }
       const pred = data.prediction as QualityPrediction;
       setQualityInspection(pred);
       setQualityPredictionId(pred.id);
       setQualityGrade(pred.predictedGrade);
+      // Persist the actual server or data URL image
+      if (pred.imageUrl && !pred.imageUrl.startsWith('blob:')) {
+        setInspectionImage(pred.imageUrl);
+      }
 
       // AI Advice & Right Price on asking price
       if (pred.predictedFairPricePerKg) {
@@ -388,19 +395,8 @@ export const HarvestPlacementPage: React.FC = () => {
         speakText(`AI Quality Inspection completed. Produce certified as Grade ${pred.predictedGrade}. Crop health is ${pred.diseaseStatus}.`);
       }
     } catch (err: any) {
-      console.warn('Quality inspection server call failed, applying ICAR client diagnostic engine:', err);
-      try {
-        const pred = createClientFallbackQualityPrediction(inspectionImage, selectedCrop.name);
-        setQualityInspection(pred);
-        setQualityPredictionId(pred.id);
-        setQualityGrade(pred.predictedGrade);
-        if (pred.predictedFairPricePerKg) {
-          setAskingPricePerKg(pred.predictedFairPricePerKg);
-        }
-        setInspectionError(null);
-      } catch (clientErr: any) {
-        setInspectionError(err.message || 'Error running quality inspection');
-      }
+      console.error(err);
+      setInspectionError(err.message || 'Error running quality inspection');
     } finally {
       setAnalyzingQuality(false);
     }
@@ -411,6 +407,27 @@ export const HarvestPlacementPage: React.FC = () => {
     e.preventDefault();
     setPublishing(true);
     try {
+      // Resolve photoUrl to persistent non-blob image
+      let finalPhoto = inspectionImage;
+      if (!finalPhoto || finalPhoto.startsWith('blob:')) {
+        if (qualityInspection?.imageUrl && !qualityInspection.imageUrl.startsWith('blob:')) {
+          finalPhoto = qualityInspection.imageUrl;
+        } else if (uploadedFile) {
+          try {
+            finalPhoto = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => resolve(selectedCrop.photoUrl);
+              reader.readAsDataURL(uploadedFile);
+            });
+          } catch {
+            finalPhoto = selectedCrop.photoUrl;
+          }
+        } else {
+          finalPhoto = selectedCrop.photoUrl;
+        }
+      }
+
       const res = await fetch('/api/listings', {
         method: 'POST',
         headers: {
@@ -426,7 +443,7 @@ export const HarvestPlacementPage: React.FC = () => {
           qualityPredictionId,
           harvestDate: new Date().toISOString().split('T')[0],
           description: `${selectedCrop.description} ${harvestCondition}`,
-          photoUrl: inspectionImage || selectedCrop.photoUrl,
+          photoUrl: finalPhoto,
           farmerLocation: user?.district ? `${user.district}, Madhya Pradesh` : 'Bhopal (Phanda), Madhya Pradesh',
           locationLat: user?.locationLat || 23.235,
           locationLng: user?.locationLng || 77.295,
@@ -1395,31 +1412,17 @@ export const HarvestPlacementPage: React.FC = () => {
                       )}
 
                       {ord.status === 'ready_for_pickup' && (
-                        <div className="flex items-center gap-2">
-                          <span className="px-3 py-2 bg-amber-50 border border-amber-300 text-amber-900 font-black text-xs rounded-xl flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Ready for Pickup (Buyer Notified)</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateOrderStatus(ord.id, 'in_transit', ord)}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1.5"
-                          >
-                            <Truck className="w-4 h-4" />
-                            <span>Mark Dispatched</span>
-                          </button>
-                        </div>
+                        <span className="px-3 py-2 bg-amber-50 border border-amber-300 text-amber-900 font-black text-xs rounded-xl flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Ready for Pickup (Awaiting Buyer Pickup)</span>
+                        </span>
                       )}
 
                       {ord.status === 'in_transit' && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateOrderStatus(ord.id, 'delivered', ord)}
-                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1.5"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Delivered & Release Payment</span>
-                        </button>
+                        <span className="px-3 py-2 bg-blue-50 border border-blue-300 text-blue-900 font-black text-xs rounded-xl flex items-center gap-1.5">
+                          <Truck className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Picked Up by Buyer (In Transit)</span>
+                        </span>
                       )}
 
                       {ord.status === 'delivered' && (
